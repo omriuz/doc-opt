@@ -1,4 +1,21 @@
-# Doc Opt
+<h1 align="center">DocOpt</h1>
+
+<p align="center">
+  <img src="assets/doc-opt-logo.png" alt="DocOpt logo" width="260"/>
+</p>
+
+<p align="center">
+  Document Optimization for Black-Box Retrieval via Reinforcement Learning
+</p>
+
+<p align="center">
+  <a href="https://arxiv.org/abs/2604.05087">
+    <img src="https://img.shields.io/badge/arXiv-2604.05087-B31B1B.svg" alt="arXiv"/>
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"/>
+  </a>
+</p>
 
 Official repository for the paper [Document Optimization for Black-Box Retrieval via Reinforcement Learning](https://arxiv.org/abs/2604.05087).
 
@@ -49,3 +66,19 @@ In that sample run:
 ![Sample results chart](artifacts/reproduce/run_report_plot.svg)
 
 _Figure generated from `artifacts/reproduce/run_report.json` using `scripts/plot_run_report.py`._
+
+## Citation
+
+If you use this repository, please cite:
+
+```bibtex
+@misc{uzan2026documentoptimizationblackboxretrieval,
+      title={Document Optimization for Black-Box Retrieval via Reinforcement Learning}, 
+      author={Omri Uzan and Ron Polonsky and Douwe Kiela and Christopher Potts},
+      year={2026},
+      eprint={2604.05087},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2604.05087}, 
+}
+```
