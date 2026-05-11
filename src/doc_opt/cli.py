@@ -14,6 +14,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="doc-opt")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    prepare_parser = subparsers.add_parser(
+        "prepare-dataset",
+        help="Download a Hugging Face retrieval dataset and convert it to the local repo layout.",
+    )
+    prepare_parser.add_argument("--dataset-id", default="mteb/DS1000Retrieval")
+    prepare_parser.add_argument("--config")
+    prepare_parser.add_argument("--output-dir", required=True, type=Path)
+    prepare_parser.add_argument("--split", default="test")
+    prepare_parser.add_argument("--overwrite", action="store_true")
+
     run_parser = subparsers.add_parser("run", help="Run the full reproduction pipeline.")
     _add_shared_arguments(run_parser)
 
@@ -37,6 +47,19 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "prepare-dataset":
+        from .prepare_dataset import prepare_hf_dataset
+
+        prepare_hf_dataset(
+            args.dataset_id,
+            config_name=args.config,
+            output_dir=args.output_dir,
+            split=args.split,
+            overwrite=args.overwrite,
+        )
+        return 0
+
     config = load_config(
         args.config,
         dataset_root=args.dataset_root,

@@ -50,7 +50,8 @@ def run_doc_opt(
     train_indices = _split_indices(len(queries), seed=config.seed, test_size=config.test_size)[0]
     train_queries_by_doc: dict[int, list[str]] = {}
     for query_index in train_indices:
-        train_queries_by_doc.setdefault(int(query2doc[query_index]), []).append(queries[query_index])
+        for doc_index in _normalize_qrels(query2doc[query_index]):
+            train_queries_by_doc.setdefault(int(doc_index), []).append(queries[query_index])
 
     train_query_embeddings = np.vstack([query_id_to_embedding[index] for index in train_indices])
     baseline_doc_embeddings = np.load(baseline_embs_path)

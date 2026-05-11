@@ -18,9 +18,12 @@ dist/
 artifacts/*
 !artifacts/reproduce/
 artifacts/reproduce/*
-!artifacts/reproduce/run_report.json
-!artifacts/reproduce/run_report_plot.svg
+# !artifacts/reproduce/run_report.json
+# !artifacts/reproduce/run_report_plot.svg
 grpo/
 docs_embs.npy
 queries_embs.npy
 transformed_docs.json
+agents.md
+data/*
+configs/*

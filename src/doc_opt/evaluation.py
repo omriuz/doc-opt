@@ -14,7 +14,7 @@ def rank_topk(query_embeddings: np.ndarray, doc_embeddings: np.ndarray, k: int) 
 def evaluate_from_embeddings(
     doc_embeddings: np.ndarray,
     query_embeddings: np.ndarray,
-    gold_qrels: dict[int, str | dict[int, float] | dict[str, float]],
+    gold_qrels: dict[int, int | str | dict[int, float] | dict[str, float]],
     doc_ids: list[str],
     *,
     k: int | None = None,
@@ -23,7 +23,10 @@ def evaluate_from_embeddings(
     metric_ks = _normalize_metric_ks(k=k, ks=ks)
     max_k = max(metric_ks)
     ranked = rank_topk(query_embeddings, doc_embeddings, max_k)
-    qrel_dict = {str(query_index): _normalize_qrel(target) for query_index, target in gold_qrels.items()}
+    qrel_dict = {
+        str(query_index): _normalize_qrel(target, doc_ids)
+        for query_index, target in gold_qrels.items()
+    }
     run_dict = {
         str(query_index): {
             doc_ids[doc_index]: float(max_k - rank)
@@ -49,9 +52,20 @@ def evaluate_from_embeddings(
     return metrics
 
 
-def _normalize_qrel(target: str | dict[int, float] | dict[str, float]) -> dict[str, float]:
+def _normalize_qrel(
+    target: int | str | dict[int, float] | dict[str, float],
+    doc_ids: list[str],
+) -> dict[str, float]:
     if isinstance(target, dict):
-        return {str(doc_id): int(relevance) for doc_id, relevance in target.items()}
+        normalized: dict[str, float] = {}
+        for doc_id, relevance in target.items():
+            if isinstance(doc_id, int):
+                normalized[doc_ids[doc_id]] = int(relevance)
+            else:
+                normalized[str(doc_id)] = int(relevance)
+        return normalized
+    if isinstance(target, int):
+        return {doc_ids[target]: 1}
     return {str(target): 1}
 
 

@@ -1,6 +1,5 @@
 {
-  "status": "running",
-  "config_path": "configs/reproduce.yaml",
+  "config_path": "configs/default.yaml",
   "output_dir": "artifacts/reproduce",
   "metric_ks": [
     1,
@@ -15,7 +14,7 @@
     "test_query_count": 1599
   },
   "stages": {
-    "baseline": {
+    "direct retrieval": {
       "metrics": {
         "ndcg@1": 0.2326454033771107,
         "recall@1": 0.2326454033771107,
@@ -25,13 +24,13 @@
         "recall@10": 0.8111319574734209
       }
     },
-    "doc-tranform": {
+    "direct transformation": {
       "metrics": {
-        "ndcg@1": 0.21951219512195122,
-        "recall@1": 0.21951219512195122,
-        "ndcg@5": 0.4898773598164878,
-        "recall@5": 0.7317073170731707,
-        "ndcg@10": 0.5348099441950334,
+        "ndcg@1": 0.22076297686053784,
+        "recall@1": 0.22076297686053784,
+        "ndcg@5": 0.4905104977816355,
+        "recall@5": 0.7323327079424641,
+        "ndcg@10": 0.535178381142901,
         "recall@10": 0.868042526579112
       },
       "docs_path": "artifacts/reproduce/doc-tranform/transformed_docs.json"
@@ -41,17 +40,45 @@
         "refresh_round": 1,
         "completed_steps": 50,
         "metrics": {
-          "ndcg@1": 0.25328330206378985,
-          "recall@1": 0.25328330206378985,
-          "ndcg@5": 0.5358741307070152,
-          "recall@5": 0.7804878048780488,
-          "ndcg@10": 0.5746688416758947,
-          "recall@10": 0.8974358974358975
+          "ndcg@1": 0.22326454033771106,
+          "recall@1": 0.22326454033771106,
+          "ndcg@5": 0.5042463594037555,
+          "recall@5": 0.7473420888055035,
+          "ndcg@10": 0.5480670997039513,
+          "recall@10": 0.8799249530956847
         },
         "checkpoint_dir": "artifacts/reproduce/checkpoints/refresh_step_50",
         "docs_path": "artifacts/reproduce/runtime/current_docs.json"
+      },
+      {
+        "refresh_round": 2,
+        "completed_steps": 100,
+        "metrics": {
+          "ndcg@1": 0.24765478424015008,
+          "recall@1": 0.24765478424015008,
+          "ndcg@5": 0.5312576868318252,
+          "recall@5": 0.7798624140087554,
+          "ndcg@10": 0.5744888663509238,
+          "recall@10": 0.9093183239524703
+        },
+        "checkpoint_dir": "artifacts/reproduce/checkpoints/refresh_step_100",
+        "docs_path": "artifacts/reproduce/runtime/current_docs.json"
+      },
+      {
+        "refresh_round": 3,
+        "completed_steps": 150,
+        "metrics": {
+          "ndcg@1": 0.2782989368355222,
+          "recall@1": 0.2782989368355222,
+          "ndcg@5": 0.5572940978264588,
+          "recall@5": 0.8005003126954346,
+          "ndcg@10": 0.5954862217432205,
+          "recall@10": 0.9155722326454033
+        },
+        "checkpoint_dir": "artifacts/reproduce/checkpoints/refresh_step_150",
+        "docs_path": "artifacts/reproduce/runtime/current_docs.json"
       }
     ],
-    "optimized": null
+    "document optimization": null
   }
 }

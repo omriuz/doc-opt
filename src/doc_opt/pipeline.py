@@ -24,7 +24,7 @@ class RuntimeContext:
     train_indices: np.ndarray
     test_indices: np.ndarray
     test_query_embeddings: np.ndarray
-    test_query2doc: dict[int, str]
+    test_query2doc: dict[int, int | dict[int, float]]
 
 
 METRIC_KS = (1, 5, 10)
