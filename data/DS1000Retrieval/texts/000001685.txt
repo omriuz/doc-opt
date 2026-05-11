@@ -1,0 +1,26 @@
+import argparse
+import pickle
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default="1")
+args = parser.parse_args()
+import pandas as pd
+import numpy as np
+import sklearn
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+df = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+tfidf = TfidfVectorizer()
+### BEGIN SOLUTION
+from sklearn.metrics.pairwise import cosine_similarity
+
+response = tfidf.fit_transform(df['description']).toarray()
+tf_idf = response
+cosine_similarity_matrix = np.zeros((len(df), len(df)))
+for i in range(len(df)):
+    for j in range(len(df)):
+        cosine_similarity_matrix[i, j] = cosine_similarity([tf_idf[i, :]], [tf_idf[j, :]])
+### END SOLUTION
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(cosine_similarity_matrix, f)

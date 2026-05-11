@@ -1,0 +1,22 @@
+import argparse
+import pickle
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default="1")
+args = parser.parse_args()
+import numpy as np
+import pandas as pd
+import torch
+
+A_log, B = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+### BEGIN SOLUTION
+for i in range(len(A_log)):
+    if A_log[i] == 1:
+        A_log[i] = 0
+    else:
+        A_log[i] = 1
+C = B[:, A_log.bool()]
+### END SOLUTION
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(C, f)

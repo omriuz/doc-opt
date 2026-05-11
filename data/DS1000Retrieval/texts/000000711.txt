@@ -1,0 +1,28 @@
+import pickle
+
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import numpy as np
+grades, eval = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+def ecdf_result(x):
+    xs = np.sort(x)
+    ys = np.arange(1, len(xs)+1)/float(len(xs))
+    return xs, ys
+resultx, resulty = ecdf_result(grades)
+result = np.zeros_like(eval, dtype=float)
+for i, element in enumerate(eval):
+    if element < resultx[0]:
+        result[i] = 0
+    elif element >= resultx[-1]:
+        result[i] = 1
+    else:
+        result[i] = resulty[(resultx > element).argmax()-1]
+#print(result)
+
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as file:
+    pickle.dump(result, file)

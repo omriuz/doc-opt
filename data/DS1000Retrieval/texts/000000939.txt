@@ -1,0 +1,27 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import pandas as pd
+import numpy as np
+
+df = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+###BEGIN SOLUTION
+def g(df):
+    result = pd.melt(df, value_vars=df.columns.tolist())
+    cols = result.columns[:-1]
+    for idx in result.index:
+        t = result.loc[idx, cols]
+        for i in range(len(cols)):
+            result.loc[idx, cols[i]] = t[cols[-i-1]]
+    return result
+
+result = g(df.copy())
+
+###END SOLUTION
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

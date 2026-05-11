@@ -1,0 +1,25 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import pandas as pd
+import numpy as np
+
+corr = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+###BEGIN SOLUTION
+def g(corr):
+    corr_triu = corr.where(~np.tril(np.ones(corr.shape)).astype(bool))
+    corr_triu = corr_triu.stack()
+    corr_triu.name = 'Pearson Correlation Coefficient'
+    corr_triu.index.names = ['Col1', 'Col2']
+    return corr_triu[corr_triu > 0.3].to_frame()
+
+result = g(corr.copy())
+
+###END SOLUTION
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

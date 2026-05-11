@@ -1,0 +1,31 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import pandas as pd
+import numpy as np
+
+df = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+###BEGIN SOLUTION
+def g(df):
+    cols = list(df.filter(like='col'))
+    df['index_original'] = df.groupby(cols)[cols[0]].transform('idxmax')
+    for i in range(len(df)):
+        i = len(df) - 1 - i
+        origin = df.loc[i, 'index_original']
+        if i <= origin:
+            continue
+        if origin == df.loc[origin, 'index_original']:
+            df.loc[origin, 'index_original'] = i
+        df.loc[i, 'index_original'] = df.loc[origin, 'index_original']
+    return df[df.duplicated(subset=cols, keep='last')]
+
+result = g(df.copy())
+
+###END SOLUTION
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

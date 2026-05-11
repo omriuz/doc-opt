@@ -1,0 +1,33 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import pandas as pd
+import numpy as np
+
+def f(df):
+    ### BEGIN SOLUTION
+    cols = list(df)[1:]
+    for idx in df.index:
+        s = 0
+        cnt = 0
+        for col in cols:
+            if df.loc[idx, col] != 0:
+                cnt = min(cnt+1, 2)
+                s = (s + df.loc[idx, col]) / cnt
+            df.loc[idx, col] = s
+    result = df
+
+    return result
+
+    ### END SOLUTION
+
+
+df = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+result = f(df)
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

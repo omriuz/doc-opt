@@ -1,0 +1,31 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import pandas as pd
+import numpy as np
+
+df, X = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+###BEGIN SOLUTION
+def g(df, X):
+    t = df['date']
+    df['date'] = pd.to_datetime(df['date'])
+    X *= 7
+    filter_ids = [0]
+    last_day = df.loc[0, "date"]
+    for index, row in df[1:].iterrows():
+        if (row["date"] - last_day).days > X:
+            filter_ids.append(index)
+            last_day = row["date"]
+    df['date'] = t
+    return df.loc[filter_ids, :]
+
+result = g(df.copy(), X)
+
+###END SOLUTION
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

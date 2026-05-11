@@ -1,0 +1,21 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import pandas as pd
+import numpy as np
+
+df1, df2 = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+###BEGIN SOLUTION
+def g(df1, df2):
+    return pd.concat([df1,df2.merge(df1[['id','city','district']], how='left', on='id')],sort=False).reset_index(drop=True)
+
+result = g(df1.copy(),df2.copy())
+
+###END SOLUTION
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

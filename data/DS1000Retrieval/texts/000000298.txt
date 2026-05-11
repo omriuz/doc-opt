@@ -1,0 +1,21 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import tensorflow as tf
+
+seed_x = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+###BEGIN SOLUTION
+def g(seed_x):
+    tf.random.set_seed(seed_x)
+    return tf.random.uniform(shape=(10,), minval=1, maxval=5, dtype=tf.int32)
+
+result = g(seed_x)
+
+###END SOLUTION
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

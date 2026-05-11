@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "doc-opt"
+version = "0.1.0"
+description = "Reproduction code for document optimization in black-box retrieval."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+license = { file = "LICENSE" }
+authors = [{ name = "Omri Uzan" }]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "accelerate==1.13.0",
+  "datasets==4.8.4",
+  "matplotlib>=3.9,<4",
+  "numpy==2.2.6",
+  "openai==2.31.0",
+  "pandas==3.0.2",
+  "python-dotenv==1.2.2",
+  "pytrec-eval==0.5",
+  "pyyaml==6.0.3",
+  "torch==2.10.0",
+  "tqdm==4.67.3",
+  "transformers==4.57.6",
+  "trl==1.1.0",
+  "vllm==0.19.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+]
+
+[project.scripts]
+doc-opt = "doc_opt.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/doc_opt"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/configs",
+  "/scripts",
+  "/src",
+  "/README.md",
+  "/LICENSE",
+  "/main.py",
+  "/requirements.txt",
+]

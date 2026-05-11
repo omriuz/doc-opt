@@ -1,0 +1,27 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import pandas as pd
+import numpy as np
+
+df = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+###BEGIN SOLUTION
+def g(df):
+    for col in df.columns:
+        vc = df[col].value_counts()
+        if col == 'Qu1':
+            df[col] = df[col].apply(lambda x: x if vc[x] >= 3 or x == 'apple' else 'other')
+        else:
+            df[col] = df[col].apply(lambda x: x if vc[x] >= 2 or x == 'apple' else 'other')
+    return df
+
+result = g(df.copy())
+
+###END SOLUTION
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

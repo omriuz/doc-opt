@@ -1,0 +1,24 @@
+import pickle
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+
+import pandas as pd
+import numpy as np
+import scipy.stats as stats
+df = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+import itertools as IT
+for col1, col2 in IT.combinations(df.columns, 2):
+    def tau(idx):
+        B = df[[col1, col2]].iloc[idx]
+        return stats.kendalltau(B[col1], B[col2])[0]
+    df[col1+col2] = pd.Series(np.arange(len(df)), index=df.index).rolling(3).apply(tau)
+
+
+#print(df)
+
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(df, f)

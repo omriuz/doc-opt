@@ -1,0 +1,57 @@
+{
+  "status": "running",
+  "config_path": "configs/reproduce.yaml",
+  "output_dir": "artifacts/reproduce",
+  "metric_ks": [
+    1,
+    5,
+    10
+  ],
+  "dataset": {
+    "dataset_root": "data/DS1000Retrieval",
+    "doc_count": 1998,
+    "query_count": 1998,
+    "train_query_count": 399,
+    "test_query_count": 1599
+  },
+  "stages": {
+    "baseline": {
+      "metrics": {
+        "ndcg@1": 0.2326454033771107,
+        "recall@1": 0.2326454033771107,
+        "ndcg@5": 0.47762765447444566,
+        "recall@5": 0.6866791744840526,
+        "ndcg@10": 0.5186848886114784,
+        "recall@10": 0.8111319574734209
+      }
+    },
+    "doc-tranform": {
+      "metrics": {
+        "ndcg@1": 0.21951219512195122,
+        "recall@1": 0.21951219512195122,
+        "ndcg@5": 0.4898773598164878,
+        "recall@5": 0.7317073170731707,
+        "ndcg@10": 0.5348099441950334,
+        "recall@10": 0.868042526579112
+      },
+      "docs_path": "artifacts/reproduce/doc-tranform/transformed_docs.json"
+    },
+    "refresh": [
+      {
+        "refresh_round": 1,
+        "completed_steps": 50,
+        "metrics": {
+          "ndcg@1": 0.25328330206378985,
+          "recall@1": 0.25328330206378985,
+          "ndcg@5": 0.5358741307070152,
+          "recall@5": 0.7804878048780488,
+          "ndcg@10": 0.5746688416758947,
+          "recall@10": 0.8974358974358975
+        },
+        "checkpoint_dir": "artifacts/reproduce/checkpoints/refresh_step_50",
+        "docs_path": "artifacts/reproduce/runtime/current_docs.json"
+      }
+    ],
+    "optimized": null
+  }
+}

@@ -1,0 +1,21 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import pandas as pd
+import numpy as np
+
+df_a, df_b = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+###BEGIN SOLUTION
+def g(df_a, df_b):
+    return df_a[['EntityNum', 'foo']].merge(df_b[['EntityNum', 'b_col']], on='EntityNum', how='left')
+
+result = g(df_a.copy(), df_b.copy())
+
+###END SOLUTION
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

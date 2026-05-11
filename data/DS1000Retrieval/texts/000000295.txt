@@ -1,0 +1,28 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import tensorflow as tf
+
+a,b = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+def f(a,b):
+    ### BEGIN SOLUTION
+    tile_a = tf.tile(tf.expand_dims(a, 1), [1, tf.shape(b)[0]])
+    tile_a = tf.expand_dims(tile_a, 2)
+    tile_b = tf.tile(tf.expand_dims(b, 0), [tf.shape(a)[0], 1])
+    tile_b = tf.expand_dims(tile_b, 2)
+    cart = tf.concat([tile_a, tile_b], axis=2)
+    result = cart
+
+    return result
+
+    ### END SOLUTION
+result = f(a,b)
+if result.shape == [12,2]:
+    result = tf.reshape(result, [3,4,2])
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)

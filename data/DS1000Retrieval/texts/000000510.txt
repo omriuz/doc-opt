@@ -1,0 +1,19 @@
+import pickle
+
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import numpy as np
+A, B = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+dims = np.maximum(B.max(0),A.max(0))+1
+result = A[~np.in1d(np.ravel_multi_index(A.T,dims),np.ravel_multi_index(B.T,dims))]
+output = np.append(result, B[~np.in1d(np.ravel_multi_index(B.T,dims),np.ravel_multi_index(A.T,dims))], axis = 0)
+
+#print(output)
+
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as file:
+    pickle.dump(output, file)

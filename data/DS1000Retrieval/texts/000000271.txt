@@ -1,0 +1,25 @@
+import pickle
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_case", type=int, default=1)
+args = parser.parse_args()
+import tensorflow as tf
+
+lengths = pickle.load(open(f"input/input{args.test_case}.pkl", "rb"))
+def f(lengths):
+    ### BEGIN SOLUTION
+    lengths_transposed = tf.expand_dims(lengths, 1)
+    range = tf.range(0, 8, 1)
+    range_row = tf.expand_dims(range, 0)
+    mask = tf.less(range_row, lengths_transposed)
+    result = tf.where(mask, tf.ones([4, 8]), tf.zeros([4, 8]))
+
+    return result
+
+    ### END SOLUTION
+result = f(lengths)
+
+with open('result/result_{}.pkl'.format(args.test_case), 'wb') as f:
+    pickle.dump(result, f)
