@@ -47,25 +47,37 @@ The reproduction config expects a local dataset root at `data/DS1000Retrieval` w
 
 You can also run custom experiments with another dataset prepared in the same format.
 
-## Reproduce
+## Run
 
 ```bash
 cp .env.example .env
 doc-opt run
 ```
 
-By default, the CLI loads `configs/default.yaml`. The default config writes outputs under `artifacts/reproduce/`. The run report is saved to `artifacts/reproduce/run_report.json` and records the `direct retrieval`, `direct transformation`, `refresh`, and `document optimization` stages with `ndcg@{1,5,10}` and `recall@{1,5,10}` metrics.
+The CLI loads `configs/default.yaml` by default. You can edit that config directly or point the CLI at another config for custom experiments.
 
-A sample report is checked in at `artifacts/reproduce/run_report.json`. It captures a short run after only 50 optimization steps on `DS1000Retrieval`, rather than a full training run.
+The top-level `reward_function` config selects the GRPO reward. The repo currently supports `ranking` (counterfactual `ndcg@5` delta), `dense` (counterfactual similarity-score delta), and `hybrid` (the average of the ranking and dense rewards). All three use positive-query gains minus hard-negative gains.
 
-In that sample run:
-- baseline retrieval reaches `ndcg@5 = 0.4776` and `recall@5 = 0.6867`
-- direct document transformation reaches `ndcg@5 = 0.4899` and `recall@5 = 0.7317`
-- after the first refresh at 50 optimization steps, performance improves to `ndcg@5 = 0.5359` and `recall@5 = 0.7805`
+Each run writes a `run_report.json` with the `direct retrieval`, `direct transformation`, `refresh`, and `document optimization` stages, along with `ndcg@{1,5,10}` and `recall@{1,5,10}` metrics.
 
-![Sample results chart](artifacts/reproduce/run_report_plot.svg)
+## Reproduce
 
-_Figure generated from `artifacts/reproduce/run_report.json` using `scripts/plot_run_report.py`._
+The checked-in default config is `configs/default.yaml`. It writes outputs under `artifacts/ds10k/`.
+
+A sample report is checked in at `artifacts/ds10k/run_report.json`. It captures an optimization run on `DS1000Retrieval` through 600 GRPO steps.
+
+In that run:
+- baseline retrieval reaches `ndcg@5 = 0.4669` and `recall@5 = 0.6785`
+- direct document transformation reaches `ndcg@5 = 0.4873` and `recall@5 = 0.7217`
+- after 600 optimization steps, performance improves to `ndcg@5 = 0.5686` and `recall@5 = 0.8280`
+
+![Sample results chart](artifacts/ds10k/run_report_plot.svg)
+
+_Figure generated from `artifacts/ds10k/run_report.json` using `scripts/plot_run_report.py`._
+
+![Sample step chart](artifacts/ds10k/run_report_steps_plot.svg)
+
+_Figure generated from `artifacts/ds10k/run_report.json` using `scripts/plot_run_report_steps.py`._
 
 ## Citation
 

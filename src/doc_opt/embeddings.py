@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
-from openai import OpenAI
+
+if TYPE_CHECKING:
+    from openai import OpenAI
 
 
 def require_openai_api_key() -> str:
@@ -15,6 +18,8 @@ def require_openai_api_key() -> str:
 
 
 def get_openai_client() -> OpenAI:
+    from openai import OpenAI
+
     require_openai_api_key()
     return OpenAI()
 

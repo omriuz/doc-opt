@@ -3,6 +3,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+import sys
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC = REPO_ROOT / "src"
+if SRC.as_posix() not in sys.path:
+    sys.path.insert(0, SRC.as_posix())
 
 from doc_opt.data import load_ds1000_dataset
 from doc_opt.prepare_dataset import convert_retrieval_rows, write_prepared_dataset

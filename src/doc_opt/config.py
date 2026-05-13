@@ -48,6 +48,7 @@ class ExperimentConfig:
     output_dir: Path
     test_size: float
     embedding_model: str
+    reward_function: str
     policy_model: str
     doc_tranform: DocTranformConfig
     doc_opt: DocOptConfig
@@ -119,6 +120,7 @@ def load_config(
         output_dir=_resolve_path(_require(raw, "output_dir")),
         test_size=float(_require(raw, "test_size")),
         embedding_model=str(_require(raw, "embedding_model")),
+        reward_function=_load_reward_function(raw),
         policy_model=str(_require(raw, "policy_model")),
         doc_tranform=_load_doc_tranform_config(_require(raw, "doc-tranform")),
         doc_opt=_load_doc_opt_config(_require(raw, "doc-opt")),
@@ -134,6 +136,8 @@ def load_config(
 
 
 def validate_config(config: ExperimentConfig) -> None:
+    if config.reward_function not in {"ranking", "dense", "hybrid"}:
+        raise ValueError("reward_function must be one of: ranking, dense, hybrid.")
     if not 0 < config.test_size < 1:
         raise ValueError("test_size must be between 0 and 1.")
     if config.doc_tranform.batch_size <= 0:
@@ -186,6 +190,15 @@ def _load_doc_opt_config(raw: Any) -> DocOptConfig:
         kl_beta=float(_require(raw, "kl_beta")),
         max_completion_length=int(_require(raw, "max_completion_length")),
     )
+
+
+def _load_reward_function(raw: dict[str, Any]) -> str:
+    if "reward_function" in raw:
+        return str(raw["reward_function"])
+    doc_opt = raw.get("doc-opt")
+    if isinstance(doc_opt, dict) and "reward_function" in doc_opt:
+        return str(doc_opt["reward_function"])
+    return "ranking"
 
 
 def _load_vllm_config(raw: Any) -> VLLMConfig:

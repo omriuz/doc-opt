@@ -14,6 +14,7 @@ from .data import DatasetBundle, load_ds1000_dataset
 from .doc_opt import seed_everything
 from .embeddings import embed_texts_openai, load_or_compute_embeddings
 from .evaluation import evaluate_from_embeddings
+from .splits import split_query_indices
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,29 +193,24 @@ def load_runtime_context(config: ExperimentConfig) -> RuntimeContext:
         cache_dir=layout.cache_dir,
         model=config.embedding_model,
     )
-    train_indices, test_indices = split_indices(
-        len(bundle.queries),
+    query_split = split_query_indices(
+        bundle.queries,
         seed=config.seed,
         test_size=config.test_size,
     )
-    test_query_embeddings = np.vstack([query_embeddings[index] for index in test_indices])
-    test_query2doc = {new_index: bundle.query2doc[old_index] for new_index, old_index in enumerate(test_indices)}
+    test_query_embeddings = np.vstack([query_embeddings[index] for index in query_split.test_indices])
+    test_query2doc = {
+        new_index: bundle.query2doc[old_index] for new_index, old_index in enumerate(query_split.test_indices)
+    }
     return RuntimeContext(
         bundle=bundle,
         docs_embeddings=docs_embeddings,
         query_embeddings=query_embeddings,
-        train_indices=train_indices,
-        test_indices=test_indices,
+        train_indices=query_split.train_indices,
+        test_indices=query_split.test_indices,
         test_query_embeddings=test_query_embeddings,
         test_query2doc=test_query2doc,
     )
-
-
-def split_indices(size: int, *, seed: int, test_size: float) -> tuple[np.ndarray, np.ndarray]:
-    indices = np.arange(size)
-    np.random.default_rng(seed).shuffle(indices)
-    split_index = int(len(indices) * (1 - test_size))
-    return indices[:split_index], indices[split_index:]
 
 
 def _run_cli_subprocess(

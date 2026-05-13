@@ -13,7 +13,12 @@ SRC = REPO_ROOT / "src"
 if SRC.as_posix() not in sys.path:
     sys.path.insert(0, SRC.as_posix())
 
-from doc_opt.report_plot import PlotStage, normalize_report_stages, validate_metric_families
+from doc_opt.report_plot import (
+    PlotStage,
+    normalize_report_checkpoints,
+    normalize_report_stages,
+    validate_metric_families,
+)
 
 
 def _old_schema_report() -> dict[str, object]:
@@ -164,6 +169,19 @@ class NormalizeReportStagesTest(unittest.TestCase):
         self.assertAlmostEqual(stages[2].metrics["ndcg@5"], 0.53)
 
 
+class NormalizeReportCheckpointsTest(unittest.TestCase):
+    def test_uses_direct_transformation_as_step_zero_and_sorts_refreshes(self) -> None:
+        report = _new_schema_report()
+        report["stages"]["refresh"] = list(reversed(report["stages"]["refresh"]))
+
+        checkpoints = normalize_report_checkpoints(report)
+
+        self.assertEqual([checkpoint.step for checkpoint in checkpoints], [0, 50, 100])
+        self.assertEqual(checkpoints[0].label, "Document Transformation")
+        self.assertAlmostEqual(checkpoints[0].metrics["ndcg@5"], 0.45)
+        self.assertAlmostEqual(checkpoints[-1].metrics["recall@10"], 0.75)
+
+
 class ValidateMetricFamiliesTest(unittest.TestCase):
     def test_raises_when_metric_family_is_missing_everywhere(self) -> None:
         stages = [
@@ -212,3 +230,46 @@ class PlotScriptSmokeTest(unittest.TestCase):
             self.assertIn("Document coverage", svg)
             self.assertIn("@1", svg)
             self.assertIn("40.00", svg)
+            self.assertIn("so retrieval latency is unchanged.", svg)
+            self.assertNotIn("50 policy optimization steps", svg)
+
+    def test_steps_script_writes_svg(self) -> None:
+        with TemporaryDirectory() as tempdir:
+            temp_path = Path(tempdir)
+            report_path = temp_path / "run_report.json"
+            output_path = temp_path / "run_report_steps_plot.svg"
+            report_path.write_text(json.dumps(_new_schema_report()), encoding="utf-8")
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    (REPO_ROOT / "scripts/plot_run_report_steps.py").as_posix(),
+                    "--report-path",
+                    report_path.as_posix(),
+                    "--output-path",
+                    output_path.as_posix(),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            svg = output_path.read_text(encoding="utf-8")
+            self.assertTrue(output_path.is_file())
+            self.assertGreater(output_path.stat().st_size, 0)
+            self.assertIn("Document Optimization by Compute", svg)
+            self.assertIn("NDCG", svg)
+            self.assertIn("Recall", svg)
+            self.assertIn("Ranking quality", svg)
+            self.assertIn("Document coverage", svg)
+            self.assertIn("Compute (optimization steps)", svg)
+            self.assertIn("Performance (%)", svg)
+            self.assertIn("NDCG@5", svg)
+            self.assertIn("NDCG@10", svg)
+            self.assertIn("Recall@5", svg)
+            self.assertIn("Recall@10", svg)
+            self.assertNotIn(">NDCG@1</text>", svg)
+            self.assertNotIn(">Recall@1</text>", svg)
+            self.assertIn("optimization checkpoints", svg)
+            self.assertIn("Step 0 = direct document transformation before optimization begins.", svg)
+            self.assertNotIn("refresh", svg)
