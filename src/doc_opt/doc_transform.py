@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import time
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from tqdm import tqdm
 from .config import ExperimentConfig
 from .data import load_ds1000_dataset
 
+ANSWER_PATTERN = re.compile(r"<answer>\s*(.*?)\s*</answer>", re.IGNORECASE | re.DOTALL)
+
 
 def build_doc_tranform_prompt(text: str, transform_instruction: str) -> str:
     return (
@@ -18,6 +21,13 @@ def build_doc_tranform_prompt(text: str, transform_instruction: str) -> str:
         f"{transform_instruction}\n"
         f"Document:\n{text}\n\nRewritten document:"
     )
+
+
+def extract_rewritten_document(text: str) -> str:
+    match = ANSWER_PATTERN.search(text)
+    if match is not None:
+        return match.group(1).strip()
+    return text.strip()
 
 
 def configure_vllm_environment(config: ExperimentConfig) -> None:
@@ -91,7 +101,7 @@ def doc_tranform_documents(
         batch_prompts = chat_prompts[batch_start : batch_start + config.doc_tranform.batch_size]
         outputs = model.generate(batch_prompts, sampling_params, use_tqdm=True)
         for output in outputs:
-            rewrites.append(output.outputs[0].text.strip())
+            rewrites.append(extract_rewritten_document(output.outputs[0].text))
     print(f"Finished generation in {time.time() - start_time:.1f}s.", flush=True)
     return rewrites
 
@@ -106,7 +116,13 @@ def run_doc_tranform(
 
     bundle = load_ds1000_dataset(config.dataset_root)
     policy_source = model_source or config.policy_model
-    tokenizer = AutoTokenizer.from_pretrained(policy_source, trust_remote_code=True)
+    local = Path(policy_source)
+    if not local.is_absolute() and local.exists():
+        policy_source = local.resolve().as_posix()
+    is_local = Path(policy_source).exists()
+    tokenizer = AutoTokenizer.from_pretrained(
+        policy_source, trust_remote_code=True, local_files_only=is_local
+    )
     policy = load_policy_vllm(config, policy_source)
     transformed_docs = doc_tranform_documents(
         bundle.docs,

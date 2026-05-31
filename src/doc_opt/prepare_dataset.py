@@ -4,8 +4,8 @@ import argparse
 import csv
 import json
 import shutil
-from collections.abc import Iterable, Mapping
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -62,22 +62,25 @@ def prepare_hf_dataset(
     split: str = DEFAULT_SPLIT,
     overwrite: bool = False,
 ) -> None:
-    from datasets import load_dataset
-
     metadata = _fetch_hf_dataset_metadata(dataset_id)
 
     if _uses_split_configs(metadata):
-        corpus = load_dataset(dataset_id, "corpus", split=split)
-        queries = load_dataset(dataset_id, "queries", split=split)
-        qrels = load_dataset(dataset_id, "qrels", split=split)
+        corpus = _load_hf_rows(dataset_id, config_name="corpus", split=split)
+        queries = _load_hf_rows(dataset_id, config_name="queries", split=split)
+        qrels = _load_hf_rows(dataset_id, config_name="qrels", split=split)
+    elif _uses_beir_separate_qrels_layout(dataset_id=dataset_id, metadata=metadata):
+        corpus = _load_hf_rows(dataset_id, config_name="corpus", split="corpus")
+        queries = _load_hf_rows(dataset_id, config_name="queries", split="queries")
+        qrels = _load_hf_rows(f"{dataset_id}-qrels", split=split)
+        queries = _filter_query_rows_to_qrels(query_rows=queries, qrel_rows=qrels)
     else:
         if not config_name:
             raise ValueError(
                 f"Dataset {dataset_id!r} requires --config. "
                 f"Available configs: {', '.join(_list_dataset_configs(metadata))}"
             )
-        corpus = load_dataset(dataset_id, config_name, split="corpus")
-        queries = load_dataset(dataset_id, config_name, split="queries")
+        corpus = _load_hf_rows(dataset_id, config_name=config_name, split="corpus")
+        queries = _load_hf_rows(dataset_id, config_name=config_name, split="queries")
         qrels = _load_qrels_rows(dataset_id=dataset_id, config_name=config_name, metadata=metadata)
 
     prepared = convert_retrieval_rows(
@@ -102,16 +105,16 @@ def convert_retrieval_rows(
 ) -> PreparedDataset:
     corpus_by_id: dict[str, str] = {}
     for row in corpus_rows:
-        doc_id = _require_string_with_aliases(row, "document id", "id", "_id")
-        doc_text = _require_string(row, "text")
+        doc_id = _require_identifier_with_aliases(row, "document id", "id", "_id")
+        doc_text = _compose_text(row)
         if doc_id in corpus_by_id:
             raise ValueError(f"Duplicate corpus id: {doc_id}")
         corpus_by_id[doc_id] = doc_text
 
     qrels_by_query: dict[str, dict[str, int]] = defaultdict(dict)
     for row in qrel_rows:
-        query_id = _require_string(row, "query-id")
-        corpus_id = _require_string(row, "corpus-id")
+        query_id = _require_identifier(row, "query-id")
+        corpus_id = _require_identifier(row, "corpus-id")
         score = int(row["score"])
         if score <= 0:
             continue
@@ -121,9 +124,9 @@ def convert_retrieval_rows(
     benchmark_rows: list[dict[str, str]] = []
     query_ids: set[str] = set()
 
-    for row in sorted(query_rows, key=lambda entry: _require_string_with_aliases(entry, "query id", "id", "_id")):
-        query_id = _require_string_with_aliases(row, "query id", "id", "_id")
-        query_text = _require_string(row, "text")
+    for row in sorted(query_rows, key=lambda entry: _require_identifier_with_aliases(entry, "query id", "id", "_id")):
+        query_id = _require_identifier_with_aliases(row, "query id", "id", "_id")
+        query_text = _compose_text(row)
         if query_id in query_ids:
             raise ValueError(f"Duplicate query id: {query_id}")
         query_ids.add(query_id)
@@ -220,9 +223,30 @@ def _encode_doc_id_for_filename(doc_id: str) -> str:
     return quote(doc_id, safe="")
 
 
+def _load_hf_rows(
+    dataset_id: str,
+    *,
+    split: str,
+    config_name: str | None = None,
+) -> list[dict[str, object]]:
+    from datasets import load_dataset
+
+    dataset = load_dataset(dataset_id, config_name, split=split)
+    return [dict(row) for row in dataset]
+
+
 def _uses_split_configs(metadata: Mapping[str, object]) -> bool:
     config_names = set(_list_dataset_configs(metadata))
     return {"corpus", "queries", "qrels"}.issubset(config_names)
+
+
+def _uses_beir_separate_qrels_layout(
+    *,
+    dataset_id: str,
+    metadata: Mapping[str, object],
+) -> bool:
+    config_names = set(_list_dataset_configs(metadata))
+    return dataset_id.startswith("BeIR/") and {"corpus", "queries"}.issubset(config_names) and "qrels" not in config_names
 
 
 def _list_dataset_configs(metadata: Mapping[str, object]) -> list[str]:
@@ -309,8 +333,48 @@ def _fetch_hf_dataset_metadata(dataset_id: str) -> dict[str, object]:
     return data
 
 
+def _filter_query_rows_to_qrels(
+    *,
+    query_rows: Iterable[Mapping[str, object]],
+    qrel_rows: Iterable[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    qrel_query_ids = {_require_identifier(row, "query-id") for row in qrel_rows}
+    filtered = [
+        dict(row)
+        for row in query_rows
+        if _require_identifier_with_aliases(row, "query id", "id", "_id") in qrel_query_ids
+    ]
+    if not filtered:
+        raise ValueError("No query rows matched the selected qrels split.")
+    return filtered
+
+
+def _compose_text(row: Mapping[str, object]) -> str:
+    title = _optional_string(row, "title").strip()
+    text = _require_string(row, "text").strip()
+    if title and text:
+        return f"{title}\n\n{text}"
+    if title:
+        return title
+    return text
+
+
 def _require_string(row: Mapping[str, object], key: str) -> str:
     value = row[key]
+    if not isinstance(value, str):
+        raise ValueError(f"Expected {key!r} to be a string, got {type(value).__name__}")
+    return value
+
+
+def _require_identifier(row: Mapping[str, object], key: str) -> str:
+    value = row[key]
+    if not isinstance(value, (str, int)):
+        raise ValueError(f"Expected {key!r} to be a string or int, got {type(value).__name__}")
+    return str(value)
+
+
+def _optional_string(row: Mapping[str, object], key: str) -> str:
+    value = row.get(key, "")
     if not isinstance(value, str):
         raise ValueError(f"Expected {key!r} to be a string, got {type(value).__name__}")
     return value
@@ -320,6 +384,13 @@ def _require_string_with_aliases(row: Mapping[str, object], label: str, *keys: s
     for key in keys:
         if key in row:
             return _require_string(row, key)
+    raise ValueError(f"Expected {label} in one of: {', '.join(keys)}")
+
+
+def _require_identifier_with_aliases(row: Mapping[str, object], label: str, *keys: str) -> str:
+    for key in keys:
+        if key in row:
+            return _require_identifier(row, key)
     raise ValueError(f"Expected {label} in one of: {', '.join(keys)}")
 
 

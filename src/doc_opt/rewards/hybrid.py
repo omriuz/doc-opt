@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from ..config import ExperimentConfig
-from ..embeddings import embed_texts_openai
+from ..doc_transform import extract_rewritten_document
+from ..embeddings import embed_texts
 from .common import RewardState
 from .dense import dense_reward_components_for_doc
 from .ranking import ranking_reward_components_for_doc
@@ -23,9 +24,10 @@ def build_hybrid_reward(*, config: ExperimentConfig, reward_state: RewardState, 
     reward_logging_state = {"step": 0}
 
     def reward(completions, document, **kwargs):
-        candidate_embeddings = embed_texts_openai(
-            [str(completion) for completion in completions],
+        candidate_embeddings = embed_texts(
+            [extract_rewritten_document(str(completion)) for completion in completions],
             model=config.embedding_model,
+            device=config.embedding_device,
             verbose=False,
         )
         doc_keys = document if isinstance(document, list) else [document]

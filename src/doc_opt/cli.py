@@ -40,6 +40,13 @@ def build_parser() -> argparse.ArgumentParser:
     doc_opt_parser.add_argument("--grpo-output-dir", required=True, type=Path)
     doc_opt_parser.add_argument("--baseline-embs-path", required=True, type=Path)
 
+    transfer_parser = subparsers.add_parser(
+        "transfer",
+        help="Evaluate a trained checkpoint on a different dataset/retriever.",
+    )
+    _add_shared_arguments(transfer_parser)
+    transfer_parser.add_argument("--checkpoint", required=True, type=Path, help="Path to the trained policy checkpoint.")
+
     return parser
 
 
@@ -63,9 +70,11 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(
         args.config,
         dataset_root=args.dataset_root,
+        eval_dataset_root=args.eval_dataset_root,
         output_dir=args.output_dir,
         model_source=args.model_source,
         max_steps=args.max_steps,
+        embedding_model=args.embedding_model,
     )
 
     if args.command == "run":
@@ -92,6 +101,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "transfer":
+        from .transfer_eval import run_transfer_eval
+
+        run_transfer_eval(config, checkpoint_path=args.checkpoint, config_path=Path(args.config))
+        return 0
+
     parser.error(f"Unsupported command: {args.command}")
     return 2
 
@@ -104,9 +119,11 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
         help=f"Path to the YAML config file (default: {DEFAULT_CONFIG_PATH.as_posix()})",
     )
     parser.add_argument("--dataset-root", type=Path)
+    parser.add_argument("--eval-dataset-root", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--model-source")
     parser.add_argument("--max-steps", type=int)
+    parser.add_argument("--embedding-model")
 
 
 if __name__ == "__main__":

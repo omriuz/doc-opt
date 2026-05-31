@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from ..config import ExperimentConfig
-from ..embeddings import embed_texts_openai
+from ..doc_transform import extract_rewritten_document
+from ..embeddings import embed_texts
 from .common import RewardState
 
 
@@ -21,9 +22,10 @@ def build_ranking_reward(*, config: ExperimentConfig, reward_state: RewardState,
     reward_logging_state = {"step": 0}
 
     def reward(completions, document, **kwargs):
-        candidate_embeddings = embed_texts_openai(
-            [str(completion) for completion in completions],
+        candidate_embeddings = embed_texts(
+            [extract_rewritten_document(str(completion)) for completion in completions],
             model=config.embedding_model,
+            device=config.embedding_device,
             verbose=False,
         )
         doc_keys = document if isinstance(document, list) else [document]
@@ -92,7 +94,8 @@ def ranking_reward_components_for_doc(
         train_query_qrels=reward_state.train_query_qrels,
         k=k,
     )
-    return float(positive_delta), float(negative_delta), float(positive_delta - negative_delta)
+    reward_value = float(positive_delta - negative_delta)
+    return float(positive_delta), float(negative_delta), reward_value
 
 
 def _ndcg_at_k_from_scores(scores: np.ndarray, qrels: dict[int, float], *, k: int) -> float:

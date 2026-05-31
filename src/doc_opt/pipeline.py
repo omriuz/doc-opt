@@ -4,7 +4,7 @@ import json
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -12,16 +12,21 @@ import numpy as np
 from .config import ExperimentConfig, artifact_layout
 from .data import DatasetBundle, load_ds1000_dataset
 from .doc_opt import seed_everything
-from .embeddings import embed_texts_openai, load_or_compute_embeddings
+from .embeddings import (
+    embed_texts,
+    load_or_compute_doc_embeddings,
+    load_or_compute_embeddings,
+    load_or_compute_query_embeddings,
+)
 from .evaluation import evaluate_from_embeddings
 from .splits import split_query_indices
 
 
 @dataclass(frozen=True, slots=True)
 class RuntimeContext:
-    bundle: DatasetBundle
+    train_bundle: DatasetBundle
+    eval_bundle: DatasetBundle
     docs_embeddings: np.ndarray
-    query_embeddings: np.ndarray
     train_indices: np.ndarray
     test_indices: np.ndarray
     test_query_embeddings: np.ndarray
@@ -31,7 +36,23 @@ class RuntimeContext:
 METRIC_KS = (1, 5, 10)
 
 
-def run_pipeline(config: ExperimentConfig, *, config_path: Path) -> dict[str, object]:
+def _model_slug(model: str) -> str:
+    return model.replace("/", "_")
+
+
+def run_pipeline(config: ExperimentConfig, *, config_path: Path) -> list[dict[str, object]]:
+    results = []
+    for model in config.embedding_models:
+        model_config = replace(
+            config,
+            embedding_models=[model],
+            output_dir=config.output_dir / _model_slug(model),
+        )
+        results.append(_run_pipeline_single(model_config, config_path=config_path))
+    return results
+
+
+def _run_pipeline_single(config: ExperimentConfig, *, config_path: Path) -> dict[str, object]:
     layout = artifact_layout(config.output_dir)
     context = load_runtime_context(config)
     run_report = _initialize_run_report(config=config, config_path=config_path, context=context, metric_ks=METRIC_KS)
@@ -42,7 +63,7 @@ def run_pipeline(config: ExperimentConfig, *, config_path: Path) -> dict[str, ob
         context.docs_embeddings,
         context.test_query_embeddings,
         context.test_query2doc,
-        context.bundle.doc_ids,
+        context.train_bundle.doc_ids,
         ks=METRIC_KS,
     )
     print(f"Direct retrieval metrics: {baseline_metrics}", flush=True)
@@ -59,12 +80,12 @@ def run_pipeline(config: ExperimentConfig, *, config_path: Path) -> dict[str, ob
         )
 
     transformed_docs = json.loads(transformed_docs_path.read_text(encoding="utf-8"))
-    transformed_docs_embeddings = embed_texts_openai(transformed_docs, model=config.embedding_model)
+    transformed_docs_embeddings = embed_texts(transformed_docs, model=config.embedding_model, device=config.embedding_device)
     transformed_metrics = evaluate_from_embeddings(
         transformed_docs_embeddings,
         context.test_query_embeddings,
         context.test_query2doc,
-        context.bundle.doc_ids,
+        context.train_bundle.doc_ids,
         ks=METRIC_KS,
     )
     print(f"Direct transformation metrics: {transformed_metrics}", flush=True)
@@ -84,11 +105,14 @@ def run_pipeline(config: ExperimentConfig, *, config_path: Path) -> dict[str, ob
     while completed_steps < config.doc_opt.max_steps:
         refresh_round += 1
         steps_this_round = min(config.doc_opt.refresh_rate, config.doc_opt.max_steps - completed_steps)
-        checkpoint_dir = (
-            latest_checkpoint_dir
-            if completed_steps + steps_this_round >= config.doc_opt.max_steps
-            else layout.checkpoints_dir / f"refresh_step_{completed_steps + steps_this_round}"
-        )
+        steps_after = completed_steps + steps_this_round
+        is_last = steps_after >= config.doc_opt.max_steps
+        if is_last:
+            checkpoint_dir = latest_checkpoint_dir
+        elif steps_after % config.doc_opt.checkpoint_save_rate == 0:
+            checkpoint_dir = layout.checkpoints_dir / f"checkpoint_step_{steps_after}"
+        else:
+            checkpoint_dir = layout.checkpoints_dir / "current"
         round_output_dir = layout.doc_opt_dir / f"refresh_{refresh_round}"
         current_embeddings_path = layout.runtime_dir / "current_doc_embs.npy"
         current_embeddings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,12 +154,12 @@ def run_pipeline(config: ExperimentConfig, *, config_path: Path) -> dict[str, ob
             ],
         )
         current_docs = json.loads(current_docs_path.read_text(encoding="utf-8"))
-        current_doc_embeddings = embed_texts_openai(current_docs, model=config.embedding_model)
+        current_doc_embeddings = embed_texts(current_docs, model=config.embedding_model, device=config.embedding_device)
         refresh_metrics = evaluate_from_embeddings(
             current_doc_embeddings,
             context.test_query_embeddings,
             context.test_query2doc,
-            context.bundle.doc_ids,
+            context.train_bundle.doc_ids,
             ks=METRIC_KS,
         )
         print(f"Refresh metrics after {completed_steps} steps: {refresh_metrics}", flush=True)
@@ -164,12 +188,12 @@ def run_pipeline(config: ExperimentConfig, *, config_path: Path) -> dict[str, ob
         ],
     )
     optimized_docs = json.loads(optimized_docs_path.read_text(encoding="utf-8"))
-    optimized_docs_embeddings = embed_texts_openai(optimized_docs, model=config.embedding_model)
+    optimized_docs_embeddings = embed_texts(optimized_docs, model=config.embedding_model, device=config.embedding_device)
     optimized_metrics = evaluate_from_embeddings(
         optimized_docs_embeddings,
         context.test_query_embeddings,
         context.test_query2doc,
-        context.bundle.doc_ids,
+        context.train_bundle.doc_ids,
         ks=METRIC_KS,
     )
     print(f"Document optimization metrics: {optimized_metrics}", flush=True)
@@ -186,28 +210,56 @@ def run_pipeline(config: ExperimentConfig, *, config_path: Path) -> dict[str, ob
 def load_runtime_context(config: ExperimentConfig) -> RuntimeContext:
     seed_everything(config.seed)
     layout = artifact_layout(config.output_dir)
-    bundle = load_ds1000_dataset(config.dataset_root)
-    docs_embeddings, query_embeddings = load_or_compute_embeddings(
-        docs=bundle.docs,
-        queries=bundle.queries,
-        cache_dir=layout.cache_dir,
-        model=config.embedding_model,
-    )
-    query_split = split_query_indices(
-        bundle.queries,
-        seed=config.seed,
-        test_size=config.test_size,
-    )
-    test_query_embeddings = np.vstack([query_embeddings[index] for index in query_split.test_indices])
-    test_query2doc = {
-        new_index: bundle.query2doc[old_index] for new_index, old_index in enumerate(query_split.test_indices)
-    }
+    train_bundle = load_ds1000_dataset(config.dataset_root)
+    if config.eval_dataset_root is None:
+        docs_embeddings, query_embeddings = load_or_compute_embeddings(
+            docs=train_bundle.docs,
+            queries=train_bundle.queries,
+            cache_dir=layout.cache_dir,
+            model=config.embedding_model,
+            device=config.embedding_device,
+        )
+        query_split = split_query_indices(
+            train_bundle.queries,
+            seed=config.seed,
+            test_size=config.test_size,
+        )
+        test_query_embeddings = np.vstack([query_embeddings[index] for index in query_split.test_indices])
+        test_query2doc = {
+            new_index: train_bundle.query2doc[old_index]
+            for new_index, old_index in enumerate(query_split.test_indices)
+        }
+        train_indices = query_split.train_indices
+        test_indices = query_split.test_indices
+        eval_bundle = train_bundle
+    else:
+        eval_bundle = load_ds1000_dataset(config.eval_dataset_root)
+        if train_bundle.doc_ids != eval_bundle.doc_ids:
+            raise ValueError(
+                "Train/eval dataset roots must share identical corpus document ids for evaluation."
+            )
+        docs_embeddings = load_or_compute_doc_embeddings(
+            docs=train_bundle.docs,
+            cache_dir=layout.cache_dir,
+            model=config.embedding_model,
+            device=config.embedding_device,
+        )
+        test_query_embeddings = load_or_compute_query_embeddings(
+            queries=eval_bundle.queries,
+            cache_dir=layout.cache_dir,
+            model=config.embedding_model,
+            device=config.embedding_device,
+            cache_name="eval_queries_embs.npy",
+        )
+        train_indices = np.arange(len(train_bundle.queries), dtype=np.int64)
+        test_indices = np.arange(len(eval_bundle.queries), dtype=np.int64)
+        test_query2doc = eval_bundle.query2doc
     return RuntimeContext(
-        bundle=bundle,
+        train_bundle=train_bundle,
+        eval_bundle=eval_bundle,
         docs_embeddings=docs_embeddings,
-        query_embeddings=query_embeddings,
-        train_indices=query_split.train_indices,
-        test_indices=query_split.test_indices,
+        train_indices=train_indices,
+        test_indices=test_indices,
         test_query_embeddings=test_query_embeddings,
         test_query2doc=test_query2doc,
     )
@@ -238,14 +290,18 @@ def _run_cli_subprocess(
         config.dataset_root.as_posix(),
         "--output-dir",
         config.output_dir.as_posix(),
+        "--embedding-model",
+        config.embedding_model,
         *extra_args,
     ]
+    if config.eval_dataset_root is not None:
+        cmd.extend(["--eval-dataset-root", config.eval_dataset_root.as_posix()])
     subprocess.run(cmd, check=True, env=env)
 
 
 def _print_dataset_summary(context: RuntimeContext) -> None:
-    print(f"Docs loaded:            {len(context.bundle.docs)}", flush=True)
-    print(f"All queries loaded:     {len(context.bundle.queries)}", flush=True)
+    print(f"Docs loaded:            {len(context.train_bundle.docs)}", flush=True)
+    print(f"All queries loaded:     {len(context.train_bundle.queries)}", flush=True)
     print(f"Train queries loaded:   {len(context.train_indices)}", flush=True)
     print(f"Test queries loaded:    {len(context.test_indices)}", flush=True)
 
@@ -263,8 +319,11 @@ def _initialize_run_report(
         "metric_ks": list(metric_ks),
         "dataset": {
             "dataset_root": config.dataset_root.as_posix(),
-            "doc_count": len(context.bundle.docs),
-            "query_count": len(context.bundle.queries),
+            "eval_dataset_root": (
+                config.eval_dataset_root.as_posix() if config.eval_dataset_root is not None else None
+            ),
+            "doc_count": len(context.train_bundle.docs),
+            "query_count": len(context.train_bundle.queries),
             "train_query_count": len(context.train_indices),
             "test_query_count": len(context.test_indices),
         },

@@ -8,7 +8,7 @@ import numpy as np
 from .config import ExperimentConfig
 from .data import load_ds1000_dataset
 from .doc_transform import build_doc_tranform_prompt
-from .embeddings import embed_texts_openai
+from .embeddings import embed_texts
 from .rewards import build_reward_function, normalize_qrels
 from .splits import split_query_indices
 
@@ -41,19 +41,29 @@ def run_doc_opt(
     docs = bundle.docs
     query2doc = bundle.query2doc
 
-    tokenizer = AutoTokenizer.from_pretrained(model_source or config.policy_model, trust_remote_code=True)
+    raw_source = model_source or config.policy_model
+    local = Path(raw_source)
+    policy_source = local.resolve().as_posix() if not local.is_absolute() and local.exists() else raw_source
+    is_local = Path(policy_source).exists()
+    tokenizer = AutoTokenizer.from_pretrained(
+        policy_source, trust_remote_code=True, local_files_only=is_local
+    )
     model = AutoModelForCausalLM.from_pretrained(
-        model_source or config.policy_model,
+        policy_source,
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
+        local_files_only=is_local,
     ).to("cuda")
 
     query_id_to_embedding = load_query_embeddings(config, queries)
-    train_indices = split_query_indices(
-        queries,
-        seed=config.seed,
-        test_size=config.test_size,
-    ).train_indices
+    if config.eval_dataset_root is None:
+        train_indices = split_query_indices(
+            queries,
+            seed=config.seed,
+            test_size=config.test_size,
+        ).train_indices
+    else:
+        train_indices = np.arange(len(queries), dtype=np.int64)
     train_queries_by_doc: dict[int, list[str]] = {}
     for query_index in train_indices:
         for doc_index in normalize_qrels(query2doc[query_index]):
@@ -100,6 +110,11 @@ def run_doc_opt(
     trainer.train()
 
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    # Persist optimizer/scheduler/rng state alongside the final weights so a run can be resumed.
+    original_output_dir = trainer.args.output_dir
+    trainer.args.output_dir = checkpoint_dir.as_posix()
+    trainer.save_state()
+    trainer.args.output_dir = original_output_dir
     trained_model = _unwrap_model_for_saving(trainer.model)
     trained_model.save_pretrained(checkpoint_dir, safe_serialization=True)
     tokenizer.save_pretrained(checkpoint_dir)
@@ -141,7 +156,7 @@ def load_query_embeddings(config: ExperimentConfig, queries: list[str]) -> np.nd
     queries_cache = cache_dir / "queries_embs.npy"
     if queries_cache.exists():
         return np.load(queries_cache)
-    query_embeddings = embed_texts_openai(queries, model=config.embedding_model)
+    query_embeddings = embed_texts(queries, model=config.embedding_model, device=config.embedding_device)
     np.save(queries_cache, query_embeddings)
     return query_embeddings
 
