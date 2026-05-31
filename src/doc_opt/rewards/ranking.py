@@ -92,7 +92,7 @@ def ranking_reward_components_for_doc(
         train_query_qrels=reward_state.train_query_qrels,
         k=k,
     )
-    return float(positive_delta), float(negative_delta), float(positive_delta - negative_delta)
+    return float(positive_delta), float(negative_delta), float(positive_delta + negative_delta)
 
 
 def _ndcg_at_k_from_scores(scores: np.ndarray, qrels: dict[int, float], *, k: int) -> float:
