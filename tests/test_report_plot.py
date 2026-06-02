@@ -23,6 +23,9 @@ from doc_opt.report_plot import (
 
 def _old_schema_report() -> dict[str, object]:
     return {
+        "dataset": {
+            "dataset_root": "data/DS1000Retrieval",
+        },
         "stages": {
             "baseline": {
                 "metrics": {
@@ -225,12 +228,11 @@ class PlotScriptSmokeTest(unittest.TestCase):
             self.assertIn("Direct Retrieval", svg)
             self.assertIn("Document Transformation", svg)
             self.assertIn("Document Optimization", svg)
-            self.assertIn("Document Optimization - DS1000Retrieval (MTEB)", svg)
+            self.assertIn("Dataset: DS1000Retrieval", svg)
             self.assertIn("Ranking quality", svg)
             self.assertIn("Document coverage", svg)
             self.assertIn("@1", svg)
             self.assertIn("40.00", svg)
-            self.assertIn("so retrieval latency is unchanged.", svg)
             self.assertNotIn("50 policy optimization steps", svg)
 
     def test_steps_script_writes_svg(self) -> None:
@@ -257,12 +259,12 @@ class PlotScriptSmokeTest(unittest.TestCase):
             svg = output_path.read_text(encoding="utf-8")
             self.assertTrue(output_path.is_file())
             self.assertGreater(output_path.stat().st_size, 0)
-            self.assertIn("Document Optimization by Compute", svg)
+            self.assertIn("Retrieval Improves through Training", svg)
             self.assertIn("NDCG", svg)
             self.assertIn("Recall", svg)
             self.assertIn("Ranking quality", svg)
             self.assertIn("Document coverage", svg)
-            self.assertIn("Compute (optimization steps)", svg)
+            self.assertIn("Stage (ordered)", svg)
             self.assertIn("Performance (%)", svg)
             self.assertIn("NDCG@5", svg)
             self.assertIn("NDCG@10", svg)
@@ -270,6 +272,6 @@ class PlotScriptSmokeTest(unittest.TestCase):
             self.assertIn("Recall@10", svg)
             self.assertNotIn(">NDCG@1</text>", svg)
             self.assertNotIn(">Recall@1</text>", svg)
-            self.assertIn("optimization checkpoints", svg)
-            self.assertIn("Step 0 = direct document transformation before optimization begins.", svg)
+            self.assertIn("X-axis shows ordered stages", svg)
+            self.assertIn("Code retrieval uses text-embedding-3-small.", svg)
             self.assertNotIn("refresh", svg)
