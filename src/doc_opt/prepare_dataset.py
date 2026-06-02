@@ -16,6 +16,7 @@ from urllib.request import urlopen
 DEFAULT_DATASET_ID = "mteb/DS1000Retrieval"
 DEFAULT_SPLIT = "test"
 BENCHMARK_FIELDNAMES = ("question", "correct_answer_document_ids")
+VIDORE_IMAGE_COLUMN = "image"
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,10 @@ def prepare_hf_dataset(
     split: str = DEFAULT_SPLIT,
     overwrite: bool = False,
 ) -> None:
+    if _is_vidore_dataset(dataset_id):
+        prepare_vidore_dataset(dataset_id, output_dir=output_dir, overwrite=overwrite)
+        return
+
     metadata = _fetch_hf_dataset_metadata(dataset_id)
 
     if _uses_split_configs(metadata):
@@ -93,6 +98,100 @@ def prepare_hf_dataset(
     print(
         f"Prepared {len(prepared.documents)} documents and "
         f"{len(prepared.benchmark_rows)} benchmark rows in {output_dir}",
+        flush=True,
+    )
+
+
+def _is_vidore_dataset(dataset_id: str) -> bool:
+    return dataset_id.startswith("vidore/")
+
+
+def _require_vidore_id(row: Mapping[str, object], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = row.get(key)
+        if value is not None:
+            return str(value)
+    raise KeyError(f"Cannot find ID field in row. Tried: {keys}. Available keys: {list(row.keys())}")
+
+
+def _load_vidore_config(dataset_id: str, config_name: str):
+    from datasets import load_dataset
+
+    for split in (config_name, "test"):
+        try:
+            return load_dataset(dataset_id, config_name, split=split)
+        except ValueError:
+            continue
+    raise ValueError(f"Could not find a usable split for {dataset_id!r} config {config_name!r}.")
+
+
+def prepare_vidore_dataset(
+    dataset_id: str,
+    *,
+    output_dir: Path,
+    overwrite: bool = False,
+) -> None:
+    """Download a ViDoRe image-retrieval dataset and write it to the local layout.
+
+    Output layout:
+        <output_dir>/images/<doc_id>.jpg   — one JPEG per corpus document
+        <output_dir>/benchmark/benchmark.csv
+    """
+    from datasets import load_dataset
+
+    images_dir = output_dir / "images"
+    benchmark_dir = output_dir / "benchmark"
+    benchmark_path = benchmark_dir / "benchmark.csv"
+
+    if not overwrite and benchmark_path.exists():
+        raise FileExistsError(
+            f"Refusing to overwrite existing dataset in {output_dir}. Pass --overwrite to replace it."
+        )
+    if overwrite and images_dir.exists():
+        shutil.rmtree(images_dir)
+    images_dir.mkdir(parents=True, exist_ok=True)
+    benchmark_dir.mkdir(parents=True, exist_ok=True)
+
+    corpus = _load_vidore_config(dataset_id, "corpus")
+    queries_ds = _load_vidore_config(dataset_id, "queries")
+    qrels_ds = _load_vidore_config(dataset_id, "qrels")
+
+    doc_id_to_stem: dict[str, str] = {}
+    for row in corpus:
+        doc_id = _require_vidore_id(row, ("corpus-id", "doc-id", "image_id", "doc_id", "image-id", "id"))
+        image = row[VIDORE_IMAGE_COLUMN]
+        stem = _encode_doc_id_for_filename(doc_id)
+        image.save(images_dir / f"{stem}.jpg", format="JPEG")
+        doc_id_to_stem[doc_id] = stem
+
+    qrels_by_query: dict[str, dict[str, int]] = defaultdict(dict)
+    for row in qrels_ds:
+        qid = _require_vidore_id(row, ("query-id", "query_id", "qid"))
+        did = _require_vidore_id(row, ("corpus-id", "corpus_id", "doc-id", "doc_id", "pid"))
+        score = int(row.get("score", 1))
+        if score > 0 and did in doc_id_to_stem:
+            qrels_by_query[qid][did] = score
+
+    benchmark_rows: list[dict[str, str]] = []
+    _query_id_keys = ("query-id", "query_id", "id")
+    for row in sorted(queries_ds, key=lambda r: _require_vidore_id(r, ("query-id", "query_id", "id"))):
+        qid = _require_vidore_id(row, _query_id_keys)
+        query_text = str(row.get("query") or row.get("text") or "").strip()
+        relevant = qrels_by_query.get(qid)
+        if not relevant:
+            continue
+        benchmark_rows.append({
+            "question": query_text,
+            "correct_answer_document_ids": _format_qrel_mapping(relevant),
+        })
+
+    with benchmark_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=BENCHMARK_FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(benchmark_rows)
+
+    print(
+        f"Prepared {len(doc_id_to_stem)} images and {len(benchmark_rows)} benchmark rows in {output_dir}",
         flush=True,
     )
 

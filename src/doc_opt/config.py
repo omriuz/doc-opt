@@ -53,6 +53,7 @@ class ExperimentConfig:
     embedding_device: str
     reward_function: str
     policy_model: str
+    doc_type: str  # "text" or "image"
     doc_tranform: DocTranformConfig
     doc_opt: DocOptConfig
     vllm: VLLMConfig
@@ -139,6 +140,7 @@ def load_config(
         embedding_device=str(raw.get("embedding_device", "cpu")),
         reward_function=_load_reward_function(raw),
         policy_model=str(_require(raw, "policy_model")),
+        doc_type=str(raw.get("doc_type", "text")),
         doc_tranform=_load_doc_tranform_config(_require(raw, "doc-tranform")),
         doc_opt=_load_doc_opt_config(_require(raw, "doc-opt")),
         vllm=_load_vllm_config(_require(raw, "vllm")),
@@ -157,6 +159,8 @@ def load_config(
 def validate_config(config: ExperimentConfig) -> None:
     if not config.embedding_models:
         raise ValueError("embedding_models must not be empty.")
+    if config.doc_type not in {"text", "image"}:
+        raise ValueError("doc_type must be 'text' or 'image'.")
     if config.reward_function not in {"ranking", "dense", "hybrid"}:
         raise ValueError("reward_function must be one of: ranking, dense, hybrid.")
     if config.eval_dataset_root is None and not 0 < config.test_size < 1:

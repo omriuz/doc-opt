@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import ExperimentConfig, artifact_layout
-from .data import DatasetBundle, load_ds1000_dataset
+from .data import DatasetBundle, load_ds1000_dataset, load_image_dataset
 from .doc_opt import seed_everything
 from .embeddings import (
     embed_texts,
@@ -59,16 +59,18 @@ def _run_pipeline_single(config: ExperimentConfig, *, config_path: Path) -> dict
     _write_run_report(layout, run_report)
     _print_dataset_summary(context)
 
-    baseline_metrics = evaluate_from_embeddings(
-        context.docs_embeddings,
-        context.test_query_embeddings,
-        context.test_query2doc,
-        context.train_bundle.doc_ids,
-        ks=METRIC_KS,
-    )
-    print(f"Direct retrieval metrics: {baseline_metrics}", flush=True)
-    run_report["stages"]["direct retrieval"] = {"metrics": baseline_metrics}
-    _write_run_report(layout, run_report)
+    # Image datasets have no text-embeddable baseline; skip direct retrieval.
+    if config.doc_type != "image":
+        baseline_metrics = evaluate_from_embeddings(
+            context.docs_embeddings,
+            context.test_query_embeddings,
+            context.test_query2doc,
+            context.train_bundle.doc_ids,
+            ks=METRIC_KS,
+        )
+        print(f"Direct retrieval metrics: {baseline_metrics}", flush=True)
+        run_report["stages"]["direct retrieval"] = {"metrics": baseline_metrics}
+        _write_run_report(layout, run_report)
 
     transformed_docs_path = layout.doc_tranform_dir / "transformed_docs.json"
     if not transformed_docs_path.exists():
@@ -210,15 +212,28 @@ def _run_pipeline_single(config: ExperimentConfig, *, config_path: Path) -> dict
 def load_runtime_context(config: ExperimentConfig) -> RuntimeContext:
     seed_everything(config.seed)
     layout = artifact_layout(config.output_dir)
-    train_bundle = load_ds1000_dataset(config.dataset_root)
+    loader = load_image_dataset if config.doc_type == "image" else load_ds1000_dataset
+    train_bundle = loader(config.dataset_root)
+    if config.doc_type == "image" and config.eval_dataset_root is not None:
+        raise ValueError("eval_dataset_root is not supported for image datasets.")
     if config.eval_dataset_root is None:
-        docs_embeddings, query_embeddings = load_or_compute_embeddings(
-            docs=train_bundle.docs,
-            queries=train_bundle.queries,
-            cache_dir=layout.cache_dir,
-            model=config.embedding_model,
-            device=config.embedding_device,
-        )
+        if config.doc_type == "image":
+            # Docs are image paths; embed queries only. Doc embeddings come from VLM captions later.
+            docs_embeddings = np.empty((len(train_bundle.docs), 0), dtype=np.float32)
+            query_embeddings = load_or_compute_query_embeddings(
+                queries=train_bundle.queries,
+                cache_dir=layout.cache_dir,
+                model=config.embedding_model,
+                device=config.embedding_device,
+            )
+        else:
+            docs_embeddings, query_embeddings = load_or_compute_embeddings(
+                docs=train_bundle.docs,
+                queries=train_bundle.queries,
+                cache_dir=layout.cache_dir,
+                model=config.embedding_model,
+                device=config.embedding_device,
+            )
         query_split = split_query_indices(
             train_bundle.queries,
             seed=config.seed,
