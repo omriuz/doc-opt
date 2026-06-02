@@ -119,7 +119,8 @@ def generate_run_report_plot(report_path: Path, output_path: Path) -> Path:
     report = load_run_report(report_path)
     stages = normalize_report_stages(report)
     validate_metric_families(stages)
-    render_run_report_plot(stages, output_path=output_path)
+    dataset_label = _extract_dataset_label(report)
+    render_run_report_plot(stages, output_path=output_path, dataset_label=dataset_label)
     return output_path
 
 
@@ -127,7 +128,14 @@ def generate_run_report_steps_plot(report_path: Path, output_path: Path) -> Path
     report = load_run_report(report_path)
     checkpoints = normalize_report_checkpoints(report)
     validate_checkpoint_metric_families(checkpoints)
-    render_run_report_steps_plot(checkpoints, output_path=output_path)
+    dataset_label = _extract_dataset_label(report)
+    baseline_metrics = _extract_baseline_metrics(report)
+    render_run_report_steps_plot(
+        checkpoints,
+        output_path=output_path,
+        dataset_label=dataset_label,
+        baseline_metrics=baseline_metrics,
+    )
     return output_path
 
 
@@ -212,15 +220,6 @@ def normalize_report_checkpoints(report: dict[str, Any]) -> list[StepPlotPoint]:
     )
     if direct_transform is not None:
         checkpoints.append(StepPlotPoint(step=0, label=direct_transform.label, metrics=direct_transform.metrics))
-    else:
-        baseline = _normalize_single_stage(
-            raw_stages,
-            ("baseline", "direct retrieval"),
-            "Direct Retrieval",
-            "baseline",
-        )
-        if baseline is not None:
-            checkpoints.append(StepPlotPoint(step=0, label=baseline.label, metrics=baseline.metrics))
 
     checkpoints.extend(_normalize_refresh_checkpoints(raw_stages.get("refresh")))
 
@@ -254,6 +253,7 @@ def render_run_report_plot(
     stages: list[PlotStage],
     *,
     output_path: Path,
+    dataset_label: str,
 ) -> None:
     plt = _load_pyplot(output_path)
 
@@ -301,7 +301,7 @@ def render_run_report_plot(
     figure.text(
         0.06,
         0.035,
-        "Dataset: DS1000Retrieval (MTEB). Retriever is a black-box OpenAI embedding API "
+        f"Dataset: {dataset_label}. Retriever is a black-box OpenAI embedding API "
         "(text-embedding-3-small).",
         ha="left",
         va="center",
@@ -320,32 +320,50 @@ def render_run_report_steps_plot(
     checkpoints: list[StepPlotPoint],
     *,
     output_path: Path,
+    dataset_label: str,
+    baseline_metrics: dict[str, float] | None = None,
 ) -> None:
     plt = _load_pyplot(output_path)
 
     figure, axes = plt.subplots(1, 2, figsize=(15.8, 7.8), dpi=220)
     figure.set_facecolor("#FBFAF7")
 
-    steps = [checkpoint.step for checkpoint in checkpoints]
-    end_label_dx = max((steps[-1] - steps[0]) * 0.08, 10.0) if len(steps) > 1 else 10.0
+    x_positions = list(range(len(checkpoints)))
+    x_labels = [_short_step_label(checkpoint.label) for checkpoint in checkpoints]
+    span = max(x_positions[-1] - x_positions[0], 1) if len(x_positions) > 1 else 1
+    end_label_dx = max(span * 0.08, 0.4)
 
     for axis, (title, metric_keys, subtitle) in zip(axes, STEP_PLOT_FAMILIES):
         _render_step_metric_panel(
             axis,
             checkpoints=checkpoints,
-            steps=steps,
+            x_positions=x_positions,
+            x_labels=x_labels,
             metric_keys=metric_keys,
             title=title,
             subtitle=subtitle,
             end_label_dx=end_label_dx,
             show_ylabel=(axis is axes[0]),
+            baseline_metrics=baseline_metrics,
         )
 
     figure.suptitle("Retrieval Improves through Training", fontsize=19, fontweight="bold", color="#153243", y=0.965)
+    has_direct_transform = any(checkpoint.label == "Document Transformation" for checkpoint in checkpoints)
+    if has_direct_transform:
+        stage_sentence = "X-axis shows ordered stages: direct transformation, optimization."
+    else:
+        stage_sentence = "X-axis shows ordered stages: optimization."
+    if baseline_metrics:
+        stage_sentence = f"{stage_sentence} Direct retrieval is shown as a dotted baseline."
+    footer = (
+        f"Dataset: {dataset_label}. "
+        f"{stage_sentence} "
+        "Code retrieval uses text-embedding-3-small."
+    )
     figure.text(
         0.5,
         0.05,
-        "Dataset: DS1000Retrieval (MTEB). Step 0 = direct document transformation before optimization begins. Code retrieval uses text-embedding-3-small.",
+        footer,
         ha="center",
         va="center",
         fontsize=14.0,
@@ -363,12 +381,14 @@ def _render_step_metric_panel(
     axis,
     *,
     checkpoints: list[StepPlotPoint],
-    steps: list[int],
+    x_positions: list[int],
+    x_labels: list[str],
     metric_keys: tuple[str, ...],
     title: str,
     subtitle: str,
     end_label_dx: float,
     show_ylabel: bool,
+    baseline_metrics: dict[str, float] | None = None,
 ) -> None:
     axis.set_facecolor("#FFFDF8")
     axis.spines["top"].set_visible(False)
@@ -379,12 +399,17 @@ def _render_step_metric_panel(
     axis.grid(axis="x", color="#EFE4D2", linewidth=0.8, alpha=0.8)
     axis.set_axisbelow(True)
 
-    if len(steps) > 1:
-        for index, (start, end) in enumerate(zip(steps, steps[1:])):
+    if len(x_positions) > 1:
+        for index, (start, end) in enumerate(zip(x_positions, x_positions[1:])):
             if index % 2 == 0:
                 axis.axvspan(start, end, color="#F4A261", alpha=0.07, zorder=0)
 
-    panel_metric_keys = [key for key in metric_keys if any(key in checkpoint.metrics for checkpoint in checkpoints)]
+    panel_metric_keys = [
+        key
+        for key in metric_keys
+        if any(key in checkpoint.metrics for checkpoint in checkpoints)
+        or (baseline_metrics is not None and key in baseline_metrics)
+    ]
     max_value = max(
         (
             checkpoint.metrics[key] * 100
@@ -403,23 +428,43 @@ def _render_step_metric_panel(
         ),
         default=0.0,
     )
+    if baseline_metrics:
+        baseline_values = [baseline_metrics[key] * 100 for key in panel_metric_keys if key in baseline_metrics]
+        if baseline_values:
+            max_value = max(max_value, *baseline_values)
+            min_value = min(min_value, *baseline_values)
     y_lower, y_upper = _step_plot_limits(min_value, max_value)
     axis.set_ylim(y_lower, y_upper)
+
+    if baseline_metrics:
+        for metric_key in panel_metric_keys:
+            value = baseline_metrics.get(metric_key)
+            if value is None or not math.isfinite(value):
+                continue
+            baseline_value = value * 100
+            axis.axhline(
+                baseline_value,
+                color=STEP_LINE_STYLES[metric_key]["color"],
+                linewidth=2.4,
+                linestyle="--",
+                alpha=0.85,
+                zorder=2,
+            )
 
     endpoint_specs: list[tuple[float, str, str, float, float]] = []
     for metric_key in panel_metric_keys:
         style = STEP_LINE_STYLES[metric_key]
         values = [checkpoint.metrics.get(metric_key, math.nan) * 100 for checkpoint in checkpoints]
         axis.plot(
-            steps,
+            x_positions,
             values,
             color=style["color"],
-            linewidth=2.6,
+            linewidth=3.1,
             linestyle=style["linestyle"],
             marker=style["marker"],
-            markersize=7.5,
-            markerfacecolor="#FBFAF7",
-            markeredgewidth=2.0,
+            markersize=8.6,
+            markerfacecolor="#FFFFFF",
+            markeredgewidth=2.2,
             markeredgecolor=style["color"],
             solid_capstyle="round",
             dash_capstyle="round",
@@ -427,8 +472,8 @@ def _render_step_metric_panel(
         )
 
         finite_points = [
-            (checkpoint.step, checkpoint.metrics[metric_key] * 100)
-            for checkpoint in checkpoints
+            (x_pos, checkpoint.metrics[metric_key] * 100)
+            for x_pos, checkpoint in zip(x_positions, checkpoints)
             if metric_key in checkpoint.metrics and math.isfinite(checkpoint.metrics[metric_key])
         ]
         if finite_points:
@@ -470,12 +515,13 @@ def _render_step_metric_panel(
         fontsize=10.2,
         color="#6B7782",
     )
-    axis.set_xlabel("GRPO steps", fontsize=12.0, color="#40515C", labelpad=13)
+    axis.set_xlabel("Stage (ordered)", fontsize=12.0, color="#40515C", labelpad=13)
     if show_ylabel:
         axis.set_ylabel("Performance (%)", fontsize=12.0, color="#40515C", labelpad=10)
-    axis.set_xticks(steps)
-    axis.set_xlim(steps[0] - max(end_label_dx * 0.18, 3.0), steps[-1] + end_label_dx * 1.1)
-    axis.tick_params(axis="x", labelsize=11.0, colors="#40515C")
+    axis.set_xticks(x_positions)
+    axis.set_xticklabels(x_labels, fontsize=10.0, color="#40515C", rotation=22, ha="right")
+    axis.set_xlim(x_positions[0] - max(end_label_dx * 0.18, 0.35), x_positions[-1] + end_label_dx * 1.1)
+    axis.tick_params(axis="x", labelsize=10.0, colors="#40515C")
     axis.tick_params(axis="y", labelsize=10.8, colors="#40515C")
 
 
@@ -496,6 +542,57 @@ def _normalize_single_stage(
         _warn(f"Skipping stage '{label}' because its metrics payload is empty.")
         return None
     return PlotStage(key=stage_key, label=label, metrics=metrics, style_key=style_key)
+
+
+def _extract_dataset_label(report: dict[str, Any]) -> str:
+    dataset = report.get("dataset")
+    if not isinstance(dataset, dict):
+        return "Unknown dataset"
+
+    for key in ("dataset_name", "dataset_id", "name"):
+        value = dataset.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    for key in ("dataset_root", "eval_dataset_root"):
+        value = dataset.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        path = Path(value)
+        name = path.name
+        if name.lower() in {"train", "test", "dev", "validation", "val", "eval"} and path.parent.name:
+            name = path.parent.name
+        if name:
+            return name
+
+    return "Unknown dataset"
+
+
+def _extract_baseline_metrics(report: dict[str, Any]) -> dict[str, float] | None:
+    raw_stages = report.get("stages")
+    if not isinstance(raw_stages, dict):
+        return None
+    baseline = _normalize_single_stage(
+        raw_stages,
+        ("baseline", "direct retrieval"),
+        "Direct Retrieval",
+        "baseline",
+    )
+    if baseline is None:
+        return None
+    return baseline.metrics
+
+
+def _short_step_label(label: str) -> str:
+    if label == "Direct Retrieval":
+        return "Direct Retrieval"
+    if label == "Document Transformation":
+        return "Doc Transform"
+    if label == "Document Optimization":
+        return "Optimization"
+    if label.startswith("Refresh "):
+        return label
+    return label
 
 
 def _select_latest_refresh_stage(raw_refresh: Any) -> PlotStage | None:

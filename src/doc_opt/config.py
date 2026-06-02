@@ -23,6 +23,7 @@ class DocTranformConfig:
 class DocOptConfig:
     max_steps: int
     refresh_rate: int
+    checkpoint_save_rate: int
     temperature: float
     per_device_train_batch_size: int
     num_generations: int
@@ -45,26 +46,36 @@ class VLLMConfig:
 class ExperimentConfig:
     seed: int
     dataset_root: Path
+    eval_dataset_root: Path | None
     output_dir: Path
     test_size: float
-    embedding_model: str
+    embedding_models: list[str]
+    embedding_device: str
     reward_function: str
     policy_model: str
     doc_tranform: DocTranformConfig
     doc_opt: DocOptConfig
     vllm: VLLMConfig
 
+    @property
+    def embedding_model(self) -> str:
+        return self.embedding_models[0]
+
     def with_overrides(
         self,
         *,
         dataset_root: Path | None = None,
+        eval_dataset_root: Path | None = None,
         output_dir: Path | None = None,
         model_source: str | None = None,
         max_steps: int | None = None,
+        embedding_model: str | None = None,
     ) -> "ExperimentConfig":
         updated = self
         if dataset_root is not None:
             updated = replace(updated, dataset_root=dataset_root)
+        if eval_dataset_root is not None:
+            updated = replace(updated, eval_dataset_root=eval_dataset_root)
         if output_dir is not None:
             updated = replace(updated, output_dir=output_dir)
         if model_source is not None:
@@ -74,6 +85,8 @@ class ExperimentConfig:
                 updated,
                 doc_opt=replace(updated.doc_opt, max_steps=max_steps),
             )
+        if embedding_model is not None:
+            updated = replace(updated, embedding_models=[embedding_model])
         validate_config(updated)
         return updated
 
@@ -105,9 +118,11 @@ def load_config(
     config_path: str | Path,
     *,
     dataset_root: str | Path | None = None,
+    eval_dataset_root: str | Path | None = None,
     output_dir: str | Path | None = None,
     model_source: str | None = None,
     max_steps: int | None = None,
+    embedding_model: str | None = None,
 ) -> ExperimentConfig:
     config_path = Path(config_path)
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
@@ -117,9 +132,11 @@ def load_config(
     cfg = ExperimentConfig(
         seed=int(_require(raw, "seed")),
         dataset_root=_resolve_path(_require(raw, "dataset_root")),
+        eval_dataset_root=_optional_path(raw.get("eval_dataset_root")),
         output_dir=_resolve_path(_require(raw, "output_dir")),
         test_size=float(_require(raw, "test_size")),
-        embedding_model=str(_require(raw, "embedding_model")),
+        embedding_models=_load_embedding_models(raw),
+        embedding_device=str(raw.get("embedding_device", "cpu")),
         reward_function=_load_reward_function(raw),
         policy_model=str(_require(raw, "policy_model")),
         doc_tranform=_load_doc_tranform_config(_require(raw, "doc-tranform")),
@@ -128,17 +145,21 @@ def load_config(
     )
     cfg = cfg.with_overrides(
         dataset_root=Path(dataset_root) if dataset_root is not None else None,
+        eval_dataset_root=Path(eval_dataset_root) if eval_dataset_root is not None else None,
         output_dir=Path(output_dir) if output_dir is not None else None,
         model_source=model_source,
         max_steps=max_steps,
+        embedding_model=embedding_model,
     )
     return cfg
 
 
 def validate_config(config: ExperimentConfig) -> None:
+    if not config.embedding_models:
+        raise ValueError("embedding_models must not be empty.")
     if config.reward_function not in {"ranking", "dense", "hybrid"}:
         raise ValueError("reward_function must be one of: ranking, dense, hybrid.")
-    if not 0 < config.test_size < 1:
+    if config.eval_dataset_root is None and not 0 < config.test_size < 1:
         raise ValueError("test_size must be between 0 and 1.")
     if config.doc_tranform.batch_size <= 0:
         raise ValueError("doc-tranform.batch_size must be positive.")
@@ -150,6 +171,8 @@ def validate_config(config: ExperimentConfig) -> None:
         raise ValueError("doc-opt.max_steps must be positive.")
     if config.doc_opt.refresh_rate <= 0:
         raise ValueError("doc-opt.refresh_rate must be positive.")
+    if config.doc_opt.checkpoint_save_rate <= 0:
+        raise ValueError("doc-opt.checkpoint_save_rate must be positive.")
     if config.doc_opt.per_device_train_batch_size <= 0:
         raise ValueError("doc-opt.per_device_train_batch_size must be positive.")
     if config.doc_opt.num_generations <= 0:
@@ -160,6 +183,17 @@ def validate_config(config: ExperimentConfig) -> None:
         raise ValueError("vllm.gpu_memory_utilization must be positive.")
     if config.vllm.max_model_len <= 0:
         raise ValueError("vllm.max_model_len must be positive.")
+
+
+def _load_embedding_models(raw: dict[str, Any]) -> list[str]:
+    if "embedding_models" in raw:
+        val = raw["embedding_models"]
+        if isinstance(val, list):
+            return [str(m) for m in val]
+        return [str(val)]
+    if "embedding_model" in raw:
+        return [str(raw["embedding_model"])]
+    raise ValueError("Missing required config key: embedding_models")
 
 
 def _load_doc_tranform_config(raw: Any) -> DocTranformConfig:
@@ -183,6 +217,7 @@ def _load_doc_opt_config(raw: Any) -> DocOptConfig:
     return DocOptConfig(
         max_steps=int(_require(raw, "max_steps")),
         refresh_rate=int(_require(raw, "refresh_rate")),
+        checkpoint_save_rate=int(_require(raw, "checkpoint_save_rate")),
         temperature=float(_require(raw, "temperature")),
         per_device_train_batch_size=int(_require(raw, "per_device_train_batch_size")),
         num_generations=int(_require(raw, "num_generations")),
@@ -222,3 +257,9 @@ def _require(raw: dict[str, Any], key: str) -> Any:
 
 def _resolve_path(value: str | Path) -> Path:
     return Path(value)
+
+
+def _optional_path(value: str | Path | None) -> Path | None:
+    if value is None:
+        return None
+    return _resolve_path(value)

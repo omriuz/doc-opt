@@ -56,7 +56,7 @@ doc-opt run
 
 The CLI loads `configs/default.yaml` by default. You can edit that config directly or point the CLI at another config for custom experiments.
 
-The top-level `reward_function` config selects the GRPO reward. The repo currently supports `ranking` (counterfactual `ndcg@5` delta), `dense` (counterfactual similarity-score delta), and `hybrid` (the average of the ranking and dense rewards). All three use positive-query gains minus hard-negative gains.
+The top-level `reward_function` config selects the GRPO reward. The repo currently supports `ranking` (counterfactual `ndcg@5` delta), `dense` (counterfactual similarity-score delta), and `hybrid` (the average of the ranking and dense rewards). All three combine positive-query gains with `reward_negative_sign` × hard-negative gains (default `-1`, which subtracts negatives).
 
 Each run writes a `run_report.json` with the `direct retrieval`, `direct transformation`, `refresh`, and `document optimization` stages, along with `ndcg@{1,5,10}` and `recall@{1,5,10}` metrics.
 

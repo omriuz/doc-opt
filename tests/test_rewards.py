@@ -28,7 +28,9 @@ class RewardConfigTest(unittest.TestCase):
             dataset_root: data/example
             output_dir: artifacts/example
             test_size: 0.2
-            embedding_model: text-embedding-3-small
+            embedding_models:
+              - text-embedding-3-small
+            embedding_device: cpu
             reward_function: ranking
             policy_model: Qwen/Qwen3-4B-Instruct-2507
 
@@ -45,6 +47,7 @@ class RewardConfigTest(unittest.TestCase):
             doc-opt:
               max_steps: 10
               refresh_rate: 5
+              checkpoint_save_rate: 10
               temperature: 0.7
               per_device_train_batch_size: 2
               num_generations: 2
@@ -76,7 +79,9 @@ class RewardConfigTest(unittest.TestCase):
             dataset_root: data/example
             output_dir: artifacts/example
             test_size: 0.2
-            embedding_model: text-embedding-3-small
+            embedding_models:
+              - text-embedding-3-small
+            embedding_device: cpu
             policy_model: Qwen/Qwen3-4B-Instruct-2507
 
             doc-tranform:
@@ -93,6 +98,7 @@ class RewardConfigTest(unittest.TestCase):
               reward_function: dense
               max_steps: 10
               refresh_rate: 5
+              checkpoint_save_rate: 10
               temperature: 0.7
               per_device_train_batch_size: 2
               num_generations: 2
@@ -124,7 +130,9 @@ class RewardConfigTest(unittest.TestCase):
             dataset_root: data/example
             output_dir: artifacts/example
             test_size: 0.2
-            embedding_model: text-embedding-3-small
+            embedding_models:
+              - text-embedding-3-small
+            embedding_device: cpu
             reward_function: hybrid
             policy_model: Qwen/Qwen3-4B-Instruct-2507
 
@@ -141,6 +149,7 @@ class RewardConfigTest(unittest.TestCase):
             doc-opt:
               max_steps: 10
               refresh_rate: 5
+              checkpoint_save_rate: 10
               temperature: 0.7
               per_device_train_batch_size: 2
               num_generations: 2
@@ -232,7 +241,9 @@ class DenseRewardTest(unittest.TestCase):
             dataset_root: data/example
             output_dir: artifacts/example
             test_size: 0.2
-            embedding_model: text-embedding-3-small
+            embedding_models:
+              - text-embedding-3-small
+            embedding_device: cpu
             reward_function: dense
             policy_model: Qwen/Qwen3-4B-Instruct-2507
 
@@ -249,6 +260,7 @@ class DenseRewardTest(unittest.TestCase):
             doc-opt:
               max_steps: 10
               refresh_rate: 5
+              checkpoint_save_rate: 10
               temperature: 0.7
               per_device_train_batch_size: 2
               num_generations: 2
@@ -296,14 +308,19 @@ class DenseRewardTest(unittest.TestCase):
         )
 
         with patch(
-            "doc_opt.rewards.dense.embed_texts_openai",
+            "doc_opt.rewards.dense.embed_texts",
             return_value=np.asarray([[1.1, -0.1]], dtype=np.float32),
-        ):
-            rewards = reward(["rewritten doc"], "0")
+        ) as embed_mock:
+            rewards = reward(["<answer>rewritten doc</answer>"], "0")
 
         self.assertEqual(len(rewards), 1)
         self.assertAlmostEqual(rewards[0], 0.25, places=6)
-
+        embed_mock.assert_called_once_with(
+            ["rewritten doc"],
+            model="text-embedding-3-small",
+            device="cpu",
+            verbose=False,
+        )
 
 class HybridRewardTest(unittest.TestCase):
     def test_hybrid_reward_averages_ranking_and_dense_rewards(self) -> None:
@@ -313,7 +330,9 @@ class HybridRewardTest(unittest.TestCase):
             dataset_root: data/example
             output_dir: artifacts/example
             test_size: 0.2
-            embedding_model: text-embedding-3-small
+            embedding_models:
+              - text-embedding-3-small
+            embedding_device: cpu
             reward_function: hybrid
             policy_model: Qwen/Qwen3-4B-Instruct-2507
 
@@ -330,6 +349,7 @@ class HybridRewardTest(unittest.TestCase):
             doc-opt:
               max_steps: 10
               refresh_rate: 5
+              checkpoint_save_rate: 10
               temperature: 0.7
               per_device_train_batch_size: 2
               num_generations: 2
@@ -375,7 +395,7 @@ class HybridRewardTest(unittest.TestCase):
         )
 
         with patch(
-            "doc_opt.rewards.hybrid.embed_texts_openai",
+            "doc_opt.rewards.hybrid.embed_texts",
             return_value=np.asarray([[1.5, 0.0]], dtype=np.float32),
         ):
             rewards = reward(["rewritten doc"], "0")
