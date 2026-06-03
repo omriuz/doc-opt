@@ -14,8 +14,34 @@ if TYPE_CHECKING:
 
 # Cache for locally loaded HuggingFace embedding models (model_name -> (model, tokenizer))
 _LOCAL_MODEL_CACHE: dict[str, tuple] = {}
-# Cache for pylate ColBERT models (model_name -> ColBERT instance)
+# Cache for multi-vector ColBERT models (model_name -> (model, tokenizer))
 _PYLATE_MODEL_CACHE: dict[str, Any] = {}
+
+
+def _stub_torchvision_if_broken() -> None:
+    """
+    jina-colbert-v2's custom model code imports transformers.modeling_utils
+    directly, which unconditionally pulls in transformers' vision utilities,
+    which import torchvision. If torchvision is installed but built against a
+    different torch version, it crashes with RuntimeError on import. Intercept
+    that crash and replace the module with a hollow stub so the import chain
+    completes without error.
+
+    Only activates when torchvision raises RuntimeError (version mismatch).
+    A correctly installed torchvision is left untouched.
+    """
+    if "torchvision" in sys.modules:
+        return
+    try:
+        import torchvision  # noqa: F401
+    except RuntimeError:
+        from unittest.mock import MagicMock
+        for key in [k for k in sys.modules if k.startswith("torchvision")]:
+            del sys.modules[key]
+        stub = MagicMock()
+        sys.modules["torchvision"] = stub
+        for sub in ("transforms", "ops", "datasets", "io", "models", "utils"):
+            sys.modules[f"torchvision.{sub}"] = MagicMock()
 
 
 def _is_openai_model(model: str) -> bool:
@@ -78,6 +104,7 @@ def embed_texts_multivec(
     import torch
     from transformers import AutoModel, AutoTokenizer
 
+    _stub_torchvision_if_broken()
     if model not in _PYLATE_MODEL_CACHE:
         print(f"Loading ColBERT model {model}...", flush=True)
         tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
