@@ -27,7 +27,7 @@ def build_hybrid_reward(*, config: ExperimentConfig, reward_state: RewardState, 
         candidate_embeddings = embed_texts(
             [extract_rewritten_document(str(completion)) for completion in completions],
             model=config.embedding_model,
-            device=config.embedding_device,
+            device=config.embedding_device_grpo,
             verbose=False,
         )
         doc_keys = document if isinstance(document, list) else [document]

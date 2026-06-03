@@ -50,7 +50,8 @@ class ExperimentConfig:
     output_dir: Path
     test_size: float
     embedding_models: list[str]
-    embedding_device: str
+    embedding_device: str       # used for index embedding (pipeline, refresh, transfer)
+    embedding_device_grpo: str  # used for reward embedding inside the GRPO training loop
     reward_function: str
     policy_model: str
     doc_type: str  # "text" or "image"
@@ -130,6 +131,7 @@ def load_config(
     if not isinstance(raw, dict):
         raise ValueError("Config file must deserialize to a mapping.")
 
+    embedding_device = str(raw.get("embedding_device", "cpu"))
     cfg = ExperimentConfig(
         seed=int(_require(raw, "seed")),
         dataset_root=_resolve_path(_require(raw, "dataset_root")),
@@ -137,7 +139,8 @@ def load_config(
         output_dir=_resolve_path(_require(raw, "output_dir")),
         test_size=float(_require(raw, "test_size")),
         embedding_models=_load_embedding_models(raw),
-        embedding_device=str(raw.get("embedding_device", "cpu")),
+        embedding_device=embedding_device,
+        embedding_device_grpo=str(raw.get("embedding_device_grpo", embedding_device)),
         reward_function=_load_reward_function(raw),
         policy_model=str(_require(raw, "policy_model")),
         doc_type=str(raw.get("doc_type", "text")),
