@@ -16,8 +16,8 @@ def build_reward_function(
     config: ExperimentConfig,
     *,
     train_indices: np.ndarray,
-    query_embeddings: np.ndarray,
-    baseline_doc_embeddings: np.ndarray,
+    query_embeddings: np.ndarray | list[np.ndarray],
+    baseline_doc_embeddings: np.ndarray | list[np.ndarray],
     query2doc: dict[int, int | dict[int, float] | dict[str, float]],
 ):
     reward_state = build_reward_state(

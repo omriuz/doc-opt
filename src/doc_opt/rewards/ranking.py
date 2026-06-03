@@ -5,6 +5,7 @@ import numpy as np
 from ..config import ExperimentConfig
 from ..doc_transform import extract_rewritten_document
 from ..embeddings import embed_texts
+from ..multivec import maxsim as _maxsim
 from .common import RewardState
 
 
@@ -129,7 +130,7 @@ def _mean_counterfactual_ndcg_delta_for_query_indices(
     candidate_embedding: np.ndarray,
     train_query_baseline_scores: np.ndarray,
     train_query_baseline_ndcg: np.ndarray,
-    train_query_embeddings: np.ndarray,
+    train_query_embeddings: np.ndarray | list[np.ndarray],
     train_query_qrels: list[dict[int, float]],
     k: int,
 ) -> float:
@@ -137,7 +138,13 @@ def _mean_counterfactual_ndcg_delta_for_query_indices(
     if local_query_indices.size == 0:
         return 0.0
     counterfactual_scores = train_query_baseline_scores[local_query_indices].copy()
-    counterfactual_scores[:, doc_index] = train_query_embeddings[local_query_indices] @ candidate_embedding
+    if isinstance(train_query_embeddings, list):
+        counterfactual_scores[:, doc_index] = np.array(
+            [_maxsim(train_query_embeddings[int(i)], candidate_embedding) for i in local_query_indices],
+            dtype=np.float32,
+        )
+    else:
+        counterfactual_scores[:, doc_index] = train_query_embeddings[local_query_indices] @ candidate_embedding
     baseline_ndcgs = train_query_baseline_ndcg[local_query_indices]
     counterfactual_ndcgs = np.asarray(
         [

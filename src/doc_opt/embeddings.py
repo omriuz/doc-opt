@@ -3,15 +3,19 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+from .multivec import is_multivec_model
 
 if TYPE_CHECKING:
     from openai import OpenAI
 
 # Cache for locally loaded HuggingFace embedding models (model_name -> (model, tokenizer))
 _LOCAL_MODEL_CACHE: dict[str, tuple] = {}
+# Cache for pylate ColBERT models (model_name -> ColBERT instance)
+_PYLATE_MODEL_CACHE: dict[str, Any] = {}
 
 
 def _is_openai_model(model: str) -> bool:
@@ -46,10 +50,47 @@ def embed_texts(
     device: str = "cpu",
     batch_size: int | None = None,
     verbose: bool = True,
-) -> np.ndarray:
+    is_query: bool = False,
+) -> np.ndarray | list[np.ndarray]:
+    if is_multivec_model(model):
+        return embed_texts_multivec(
+            texts,
+            model=model,
+            device=device,
+            batch_size=batch_size or 32,
+            verbose=verbose,
+            is_query=is_query,
+        )
     if _is_openai_model(model):
         return embed_texts_openai(texts, model=model, batch_size=batch_size or 128, verbose=verbose)
     return embed_texts_local(texts, model=model, device=device, batch_size=batch_size or 32, verbose=verbose)
+
+
+def embed_texts_multivec(
+    texts: list[str],
+    *,
+    model: str,
+    device: str = "cpu",
+    batch_size: int = 32,
+    verbose: bool = True,
+    is_query: bool = False,
+) -> list[np.ndarray]:
+    from pylate import models as pylate_models
+
+    if model not in _PYLATE_MODEL_CACHE:
+        print(f"Loading ColBERT model {model}...", flush=True)
+        _PYLATE_MODEL_CACHE[model] = pylate_models.ColBERT(
+            model_name_or_path=model,
+            device=device,
+        )
+
+    colbert = _PYLATE_MODEL_CACHE[model]
+    return colbert.encode(
+        texts,
+        batch_size=batch_size,
+        is_query=is_query,
+        show_progress_bar=verbose,
+    )
 
 
 def embed_texts_openai(
@@ -146,6 +187,19 @@ def _last_token_pool(last_hidden_states, attention_mask):
     ]
 
 
+def save_embeddings(path: Path, embeddings: np.ndarray | list[np.ndarray]) -> None:
+    if isinstance(embeddings, list):
+        np.save(path, np.array(embeddings, dtype=object), allow_pickle=True)
+    else:
+        np.save(path, embeddings)
+
+
+def load_embeddings(path: Path, *, multivec: bool) -> np.ndarray | list[np.ndarray]:
+    if multivec:
+        return np.load(path, allow_pickle=True).tolist()
+    return np.load(path)
+
+
 def load_or_compute_embeddings(
     *,
     docs: list[str],
@@ -153,7 +207,7 @@ def load_or_compute_embeddings(
     cache_dir: Path,
     model: str,
     device: str = "cpu",
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray | list[np.ndarray], np.ndarray | list[np.ndarray]]:
     docs_embeddings = load_or_compute_doc_embeddings(docs=docs, cache_dir=cache_dir, model=model, device=device)
     queries_embeddings = load_or_compute_query_embeddings(queries=queries, cache_dir=cache_dir, model=model, device=device)
     return docs_embeddings, queries_embeddings
@@ -166,15 +220,15 @@ def load_or_compute_doc_embeddings(
     model: str,
     device: str = "cpu",
     cache_name: str = "docs_embs.npy",
-) -> np.ndarray:
+) -> np.ndarray | list[np.ndarray]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     docs_cache = cache_dir / cache_name
+    multivec = is_multivec_model(model)
 
     if docs_cache.exists():
-        docs_embeddings = np.load(docs_cache)
-    else:
-        docs_embeddings = embed_texts(docs, model=model, device=device)
-        np.save(docs_cache, docs_embeddings)
+        return load_embeddings(docs_cache, multivec=multivec)
+    docs_embeddings = embed_texts(docs, model=model, device=device)
+    save_embeddings(docs_cache, docs_embeddings)
     return docs_embeddings
 
 
@@ -185,11 +239,13 @@ def load_or_compute_query_embeddings(
     model: str,
     device: str = "cpu",
     cache_name: str = "queries_embs.npy",
-) -> np.ndarray:
+) -> np.ndarray | list[np.ndarray]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     queries_cache = cache_dir / cache_name
+    multivec = is_multivec_model(model)
+
     if queries_cache.exists():
-        return np.load(queries_cache)
-    queries_embeddings = embed_texts(queries, model=model, device=device)
-    np.save(queries_cache, queries_embeddings)
+        return load_embeddings(queries_cache, multivec=multivec)
+    queries_embeddings = embed_texts(queries, model=model, device=device, is_query=True)
+    save_embeddings(queries_cache, queries_embeddings)
     return queries_embeddings

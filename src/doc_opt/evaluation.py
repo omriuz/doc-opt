@@ -4,16 +4,26 @@ import numpy as np
 import pytrec_eval
 import torch
 
+from .multivec import compute_scores as _multivec_compute_scores
 
-def rank_topk(query_embeddings: np.ndarray, doc_embeddings: np.ndarray, k: int) -> np.ndarray:
+
+def rank_topk(
+    query_embeddings: np.ndarray | list[np.ndarray],
+    doc_embeddings: np.ndarray | list[np.ndarray],
+    k: int,
+) -> np.ndarray:
+    if isinstance(query_embeddings, list):
+        k = min(k, len(doc_embeddings))
+        scores = _multivec_compute_scores(query_embeddings, doc_embeddings)
+        return np.argsort(-scores, axis=1)[:, :k]
     k = min(k, int(doc_embeddings.shape[0]))
     scores = torch.from_numpy(query_embeddings) @ torch.from_numpy(doc_embeddings).T
     return torch.topk(scores, k=k, dim=1).indices.cpu().numpy()
 
 
 def evaluate_from_embeddings(
-    doc_embeddings: np.ndarray,
-    query_embeddings: np.ndarray,
+    doc_embeddings: np.ndarray | list[np.ndarray],
+    query_embeddings: np.ndarray | list[np.ndarray],
     gold_qrels: dict[int, int | str | dict[int, float] | dict[str, float]],
     doc_ids: list[str],
     *,

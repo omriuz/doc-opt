@@ -1,4 +1,5 @@
 accelerate==1.13.0
+pylate
 datasets==4.8.4
 matplotlib>=3.9,<4
 numpy==2.2.6

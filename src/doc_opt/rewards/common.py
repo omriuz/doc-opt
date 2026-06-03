@@ -4,10 +4,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..multivec import compute_scores as _multivec_compute_scores, maxsim as _maxsim
+
 
 @dataclass(frozen=True, slots=True)
 class RewardState:
-    train_query_embeddings: np.ndarray
+    train_query_embeddings: np.ndarray | list[np.ndarray]
     train_query_qrels: list[dict[int, float]]
     train_query_baseline_scores: np.ndarray
     train_positive_query_indices_by_doc: dict[int, np.ndarray]
@@ -25,14 +27,22 @@ def normalize_qrels(raw_target) -> dict[int, float]:
 def build_reward_state(
     *,
     train_indices: np.ndarray,
-    query_embeddings: np.ndarray,
-    baseline_doc_embeddings: np.ndarray,
+    query_embeddings: np.ndarray | list[np.ndarray],
+    baseline_doc_embeddings: np.ndarray | list[np.ndarray],
     query2doc: dict[int, int | dict[int, float] | dict[str, float]],
     negative_top_k: int,
 ) -> RewardState:
-    train_query_embeddings = np.vstack([query_embeddings[index] for index in train_indices])
+    if isinstance(query_embeddings, list):
+        train_query_embeddings: np.ndarray | list[np.ndarray] = [
+            query_embeddings[int(index)] for index in train_indices
+        ]
+        train_query_baseline_scores = _multivec_compute_scores(
+            train_query_embeddings, baseline_doc_embeddings
+        )
+    else:
+        train_query_embeddings = np.vstack([query_embeddings[index] for index in train_indices])
+        train_query_baseline_scores = train_query_embeddings @ baseline_doc_embeddings.T
     train_query_qrels = [normalize_qrels(query2doc[index]) for index in train_indices]
-    train_query_baseline_scores = train_query_embeddings @ baseline_doc_embeddings.T
     reward_doc_indices = sorted({doc_index for qrels in train_query_qrels for doc_index in qrels})
     train_positive_query_indices_by_doc = {
         doc_index: np.asarray(
@@ -91,11 +101,17 @@ def mean_counterfactual_score_delta_for_query_indices(
     doc_index: int,
     candidate_embedding: np.ndarray,
     train_query_baseline_scores: np.ndarray,
-    train_query_embeddings: np.ndarray,
+    train_query_embeddings: np.ndarray | list[np.ndarray],
 ) -> float:
     local_query_indices = np.asarray(query_indices, dtype=np.int64)
     if local_query_indices.size == 0:
         return 0.0
     baseline_scores = train_query_baseline_scores[local_query_indices, doc_index]
-    candidate_scores = train_query_embeddings[local_query_indices] @ candidate_embedding
+    if isinstance(train_query_embeddings, list):
+        candidate_scores = np.array(
+            [_maxsim(train_query_embeddings[int(i)], candidate_embedding) for i in local_query_indices],
+            dtype=np.float32,
+        )
+    else:
+        candidate_scores = train_query_embeddings[local_query_indices] @ candidate_embedding
     return float(np.mean(candidate_scores - baseline_scores))

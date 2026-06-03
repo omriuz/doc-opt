@@ -54,9 +54,12 @@ def _eval_single_model(
     query_split = split_query_indices(
         bundle.queries, seed=model_config.seed, test_size=model_config.test_size
     )
-    test_query_embeddings = np.vstack(
-        [query_embeddings[i] for i in query_split.test_indices]
-    )
+    if isinstance(query_embeddings, list):
+        test_query_embeddings = [query_embeddings[int(i)] for i in query_split.test_indices]
+    else:
+        test_query_embeddings = np.vstack(
+            [query_embeddings[i] for i in query_split.test_indices]
+        )
     test_query2doc = {
         new_i: bundle.query2doc[old_i]
         for new_i, old_i in enumerate(query_split.test_indices)

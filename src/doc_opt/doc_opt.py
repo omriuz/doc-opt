@@ -8,7 +8,8 @@ import numpy as np
 from .config import ExperimentConfig
 from .data import load_ds1000_dataset, load_image_dataset
 from .doc_transform import build_doc_tranform_prompt
-from .embeddings import embed_texts
+from .embeddings import embed_texts, load_embeddings, save_embeddings
+from .multivec import is_multivec_model
 from .rewards import build_reward_function, normalize_qrels
 from .splits import split_query_indices
 
@@ -116,7 +117,9 @@ def _run_doc_opt_text(
         config,
         train_indices=train_indices,
         query_embeddings=load_query_embeddings(config, bundle.queries),
-        baseline_doc_embeddings=np.load(baseline_embs_path),
+        baseline_doc_embeddings=load_embeddings(
+            baseline_embs_path, multivec=is_multivec_model(config.embedding_model)
+        ),
         query2doc=bundle.query2doc,
     )
     trainer = GRPOTrainer(
@@ -164,7 +167,9 @@ def _run_doc_opt_image(
         config,
         train_indices=train_indices,
         query_embeddings=load_query_embeddings(config, bundle.queries),
-        baseline_doc_embeddings=np.load(baseline_embs_path),
+        baseline_doc_embeddings=load_embeddings(
+            baseline_embs_path, multivec=is_multivec_model(config.embedding_model)
+        ),
         query2doc=bundle.query2doc,
     )
 
@@ -245,16 +250,21 @@ def build_image_doc_opt_rows(
     ]
 
 
-def load_query_embeddings(config: ExperimentConfig, queries: list[str]) -> np.ndarray:
+def load_query_embeddings(
+    config: ExperimentConfig, queries: list[str]
+) -> np.ndarray | list[np.ndarray]:
     from .config import artifact_layout
 
     cache_dir = artifact_layout(config.output_dir).cache_dir
     cache_dir.mkdir(parents=True, exist_ok=True)
     queries_cache = cache_dir / "queries_embs.npy"
+    multivec = is_multivec_model(config.embedding_model)
     if queries_cache.exists():
-        return np.load(queries_cache)
-    query_embeddings = embed_texts(queries, model=config.embedding_model, device=config.embedding_device)
-    np.save(queries_cache, query_embeddings)
+        return load_embeddings(queries_cache, multivec=multivec)
+    query_embeddings = embed_texts(
+        queries, model=config.embedding_model, device=config.embedding_device, is_query=True
+    )
+    save_embeddings(queries_cache, query_embeddings)
     return query_embeddings
 
 

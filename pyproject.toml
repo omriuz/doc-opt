@@ -36,6 +36,9 @@ dependencies = [
 dev = [
   "build>=1.2,<2",
 ]
+colbert = [
+  "pylate",
+]
 
 [project.scripts]
 doc-opt = "doc_opt.cli:main"

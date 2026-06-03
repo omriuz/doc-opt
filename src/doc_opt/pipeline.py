@@ -17,6 +17,7 @@ from .embeddings import (
     load_or_compute_doc_embeddings,
     load_or_compute_embeddings,
     load_or_compute_query_embeddings,
+    save_embeddings,
 )
 from .evaluation import evaluate_from_embeddings
 from .splits import split_query_indices
@@ -98,7 +99,11 @@ def _run_pipeline_single(config: ExperimentConfig, *, config_path: Path) -> dict
     _write_run_report(layout, run_report)
 
     current_docs = list(transformed_docs)
-    current_doc_embeddings = np.asarray(transformed_docs_embeddings, dtype=np.float32).copy()
+    current_doc_embeddings = (
+        list(transformed_docs_embeddings)
+        if isinstance(transformed_docs_embeddings, list)
+        else np.asarray(transformed_docs_embeddings, dtype=np.float32).copy()
+    )
     completed_steps = 0
     refresh_round = 0
     latest_checkpoint_dir = layout.checkpoints_dir / "optimized_policy"
@@ -118,7 +123,7 @@ def _run_pipeline_single(config: ExperimentConfig, *, config_path: Path) -> dict
         round_output_dir = layout.doc_opt_dir / f"refresh_{refresh_round}"
         current_embeddings_path = layout.runtime_dir / "current_doc_embs.npy"
         current_embeddings_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(current_embeddings_path, current_doc_embeddings)
+        save_embeddings(current_embeddings_path, current_doc_embeddings)
         _run_cli_subprocess(
             "doc-opt",
             config_path=config_path,
@@ -239,7 +244,12 @@ def load_runtime_context(config: ExperimentConfig) -> RuntimeContext:
             seed=config.seed,
             test_size=config.test_size,
         )
-        test_query_embeddings = np.vstack([query_embeddings[index] for index in query_split.test_indices])
+        if isinstance(query_embeddings, list):
+            test_query_embeddings = [query_embeddings[int(i)] for i in query_split.test_indices]
+        else:
+            test_query_embeddings = np.vstack(
+                [query_embeddings[index] for index in query_split.test_indices]
+            )
         test_query2doc = {
             new_index: train_bundle.query2doc[old_index]
             for new_index, old_index in enumerate(query_split.test_indices)
