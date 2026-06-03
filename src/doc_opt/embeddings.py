@@ -75,22 +75,42 @@ def embed_texts_multivec(
     verbose: bool = True,
     is_query: bool = False,
 ) -> list[np.ndarray]:
-    from pylate import models as pylate_models
+    import torch
+    from transformers import AutoModel, AutoTokenizer
 
     if model not in _PYLATE_MODEL_CACHE:
         print(f"Loading ColBERT model {model}...", flush=True)
-        _PYLATE_MODEL_CACHE[model] = pylate_models.ColBERT(
-            model_name_or_path=model,
-            device=device,
-        )
+        tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
+        hf_model = AutoModel.from_pretrained(model, trust_remote_code=True).to(device)
+        hf_model.eval()
+        _PYLATE_MODEL_CACHE[model] = (hf_model, tokenizer)
 
-    colbert = _PYLATE_MODEL_CACHE[model]
-    return colbert.encode(
-        texts,
-        batch_size=batch_size,
-        is_query=is_query,
-        show_progress_bar=verbose,
-    )
+    hf_model, tokenizer = _PYLATE_MODEL_CACHE[model]
+    all_embeddings: list[np.ndarray] = []
+    total_batches = (len(texts) + batch_size - 1) // batch_size
+
+    for batch_num, start in enumerate(range(0, len(texts), batch_size), start=1):
+        if verbose:
+            print(f"Embedding batch {batch_num}/{total_batches}", flush=True)
+        batch_texts = texts[start : start + batch_size]
+        encoded = tokenizer(
+            batch_texts,
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors="pt",
+        ).to(device)
+        with torch.no_grad():
+            outputs = hf_model(**encoded)
+        token_embs = outputs.last_hidden_state  # [batch, seq_len, dim]
+        attention_mask = encoded["attention_mask"]
+        for i in range(len(batch_texts)):
+            seq_len = int(attention_mask[i].sum())
+            emb = token_embs[i, :seq_len].cpu().float().numpy()
+            norms = np.linalg.norm(emb, axis=1, keepdims=True)
+            all_embeddings.append(emb / np.where(norms == 0, 1.0, norms))
+
+    return all_embeddings
 
 
 def embed_texts_openai(
