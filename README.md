@@ -19,15 +19,24 @@
 
 Official repository for the paper [Document Optimization for Black-Box Retrieval via Reinforcement Learning](https://arxiv.org/abs/2604.05087).
 
-This repository contains the current reproduction code for document optimization on the [DS1000Retrieval dataset](https://huggingface.co/datasets/mteb/DS1000Retrieval). The implementation uses OpenAI embeddings for retrieval and a vLLM-backed causal language model for document rewriting and GRPO training.
+DocOpt optimizes document text to improve retrieval ranking using GRPO reinforcement learning. It supports text and image document collections, multiple retriever types, and any dataset in the expected layout.
 
-We are activley working on extending the support of this repo to additional retrievers, datasets and models. Stay tuned!
+**Retriever support**
+- **OpenAI** — `text-embedding-3-small`, `text-embedding-3-large`, etc.
+- **Local dense** — any Hugging Face embedding model (e.g. `Qwen/Qwen3-Embedding-0.6B`)
+- **Multi-vector (ColBERT)** — e.g. `jinaai/jina-colbert-v2`, scored via MaxSim late interaction
+
+**Document type support**
+- **Text** — documents are embedded directly and optimized by a causal LM
+- **Image** — a vision-language model describes each image; descriptions are embedded and optimized
+
+Multiple retrievers can be listed in a single config; the pipeline runs end-to-end for each.
 
 ## Prerequisites
 
 - Python `3.13`
 - A GPU for the vLLM and GRPO stages. Development was done using a single H200. A100/H100s should work with reduced batch sizes.
-- `OPENAI_API_KEY` for embedding generation
+- `OPENAI_API_KEY` when using OpenAI embedding models (not required for local retrievers)
 
 ## Install
 
@@ -40,25 +49,46 @@ uv pip install -e .
 
 ## Dataset
 
-The reproduction config expects a local dataset root at `data/DS1000Retrieval` with this layout:
+Datasets are expected in this layout:
 
-- `data/DS1000Retrieval/texts/*.txt`
-- `data/DS1000Retrieval/benchmark/benchmark.csv`
+**Text datasets**
+```
+data/<dataset>/texts/*.txt
+data/<dataset>/benchmark/benchmark.csv
+```
 
-You can also run custom experiments with another dataset prepared in the same format.
+**Image datasets**
+```
+data/<dataset>/images/*.{jpg,png,webp}
+data/<dataset>/benchmark/benchmark.csv
+```
+
+`benchmark.csv` has columns `question` and `correct_answer_document_ids` (a JSON-encoded dict of `{doc_id: relevance}`).
+
+To download and convert any MTEB/BEIR retrieval dataset:
+```bash
+doc-opt prepare-dataset --dataset-id mteb/DS1000Retrieval --output-dir data/DS1000Retrieval
+```
 
 ## Run
 
 ```bash
-cp .env.example .env
-doc-opt run
+cp .env.example .env   # add OPENAI_API_KEY if using OpenAI embeddings
+doc-opt run --config configs/default.yaml
 ```
 
-The CLI loads `configs/default.yaml` by default. You can edit that config directly or point the CLI at another config for custom experiments.
+The CLI loads `configs/default.yaml` by default. Switch configs or override individual fields via CLI flags:
 
-The top-level `reward_function` config selects the GRPO reward. The repo currently supports `ranking` (counterfactual `ndcg@5` delta), `dense` (counterfactual similarity-score delta), and `hybrid` (the average of the ranking and dense rewards). All three combine positive-query gains with `reward_negative_sign` × hard-negative gains (default `-1`, which subtracts negatives).
+```bash
+doc-opt run --config configs/freshstack.yaml --embedding-model Qwen/Qwen3-Embedding-0.6B
+```
 
-Each run writes a `run_report.json` with the `direct retrieval`, `direct transformation`, `refresh`, and `document optimization` stages, along with `ndcg@{1,5,10}` and `recall@{1,5,10}` metrics.
+**Reward functions** — set `reward_function` in the config:
+- `ranking` — counterfactual NDCG@5 delta (default)
+- `dense` — counterfactual similarity-score delta
+- `hybrid` — average of ranking and dense
+
+Each run writes a `run_report.json` with per-stage metrics (`ndcg@{1,5,10}`, `recall@{1,5,10}`) for `direct retrieval`, `direct transformation`, `refresh`, and `document optimization`.
 
 ## Reproduce
 
