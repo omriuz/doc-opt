@@ -26,6 +26,8 @@ docs_embs.npy
 queries_embs.npy
 transformed_docs.json
 agents.md
+run_status.py
+analyze_optimization_steps.py
 data/*
 configs/*
 *.err
