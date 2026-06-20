@@ -21,14 +21,14 @@ Official repository for the paper [Document Optimization for Black-Box Retrieval
 
 DocOpt optimizes document text to improve retrieval ranking using GRPO reinforcement learning. It supports text and image document collections, multiple retriever types, and any dataset in the expected layout.
 
-**Retriever support**
-- **OpenAI** — `text-embedding-3-small`, `text-embedding-3-large`, etc.
-- **Local dense** — any Hugging Face embedding model (e.g. `Qwen/Qwen3-Embedding-0.6B`)
-- **Multi-vector (ColBERT)** — e.g. `jinaai/jina-colbert-v2`, scored via MaxSim late interaction
+**Tested retrievers**
+- **OpenAI** — `text-embedding-3-small`, `text-embedding-3-large`
+- **Qwen** — `Qwen/Qwen3-Embedding-0.6B`, `Qwen/Qwen3-Embedding-4B`
+- **Jina ColBERT** — `jinaai/jina-colbert-v2` (multi-vector, scored via MaxSim late interaction)
 
-**Document type support**
-- **Text** — documents are embedded directly and optimized by a causal LM
-- **Image** — a vision-language model describes each image; descriptions are embedded and optimized
+**Tested document types**
+- **Text** — documents are embedded directly and optimized by a causal LM (tested with `Qwen/Qwen3-4B-Instruct`)
+- **Image** — a VLM describes each image; descriptions are embedded and optimized (tested with `Qwen/Qwen3-VL-2B-Instruct` and OpenAI / Qwen retrievers)
 
 Multiple retrievers can be listed in a single config; the pipeline runs end-to-end for each.
 
@@ -92,22 +92,15 @@ Each run writes a `run_report.json` with per-stage metrics (`ndcg@{1,5,10}`, `re
 
 ## Reproduce
 
-The checked-in default config is `configs/default.yaml`. It writes outputs under `artifacts/ds10k/`.
+The default config is `configs/default.yaml` (DS1000Retrieval, `text-embedding-3-small`). Run outputs are written under `artifacts/ds1000/text-embedding-3-small/`.
 
-A sample report is checked in at `artifacts/ds10k/run_report.json`. It captures an optimization run on `DS1000Retrieval` through 600 GRPO steps.
+A sample result on DS1000Retrieval with `text-embedding-3-small` over 600 GRPO steps:
 
-In that run:
-- baseline retrieval reaches `ndcg@5 = 0.4669` and `recall@5 = 0.6785`
-- direct document transformation reaches `ndcg@5 = 0.4873` and `recall@5 = 0.7217`
-- after 600 optimization steps, performance improves to `ndcg@5 = 0.5686` and `recall@5 = 0.8280`
-
-![Sample results chart](artifacts/ds10k/run_report_plot.svg)
-
-_Figure generated from `artifacts/ds10k/run_report.json` using `scripts/plot_run_report.py`._
-
-![Sample step chart](artifacts/ds10k/run_report_steps_plot.svg)
-
-_Figure generated from `artifacts/ds10k/run_report.json` using `scripts/plot_run_report_steps.py`._
+| Stage | NDCG@5 | Recall@5 |
+|---|---|---|
+| Baseline retrieval | 0.4669 | 0.6785 |
+| Direct transformation | 0.4873 | 0.7217 |
+| After optimization | 0.5686 | 0.8280 |
 
 ## Citation
 
