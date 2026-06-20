@@ -47,6 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_shared_arguments(transfer_parser)
     transfer_parser.add_argument("--checkpoint", required=True, type=Path, help="Path to the trained policy checkpoint.")
 
+    finetune_parser = subparsers.add_parser(
+        "finetune-embedder",
+        help="Fine-tune embedding models directly on the retrieval dataset (supervised baseline).",
+    )
+    _add_shared_arguments(finetune_parser)
+
     return parser
 
 
@@ -105,6 +111,12 @@ def main(argv: list[str] | None = None) -> int:
         from .transfer_eval import run_transfer_eval
 
         run_transfer_eval(config, checkpoint_path=args.checkpoint, config_path=Path(args.config))
+        return 0
+
+    if args.command == "finetune-embedder":
+        from .finetune_embedder import run_finetune_embedder
+
+        run_finetune_embedder(config)
         return 0
 
     parser.error(f"Unsupported command: {args.command}")

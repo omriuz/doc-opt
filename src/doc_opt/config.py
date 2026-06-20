@@ -43,6 +43,21 @@ class VLLMConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class EmbeddingFinetuneConfig:
+    epochs: int
+    batch_size: int
+    learning_rate: float
+    temperature: float
+    max_length: int
+    warmup_ratio: float
+    weight_decay: float
+    # Image datasets have no embeddable raw text, so finetuning pairs queries
+    # against cached VLM-generated document descriptions (transformed_docs.json
+    # from a prior doc-tranform run) instead of the raw documents.
+    transformed_docs_path: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ExperimentConfig:
     seed: int
     dataset_root: Path
@@ -58,6 +73,7 @@ class ExperimentConfig:
     doc_tranform: DocTranformConfig
     doc_opt: DocOptConfig
     vllm: VLLMConfig
+    embedding_finetune: EmbeddingFinetuneConfig | None = None
 
     @property
     def embedding_model(self) -> str:
@@ -147,6 +163,7 @@ def load_config(
         doc_tranform=_load_doc_tranform_config(_require(raw, "doc-tranform")),
         doc_opt=_load_doc_opt_config(_require(raw, "doc-opt")),
         vllm=_load_vllm_config(_require(raw, "vllm")),
+        embedding_finetune=_load_embedding_finetune_config(raw.get("embedding-finetune")),
     )
     cfg = cfg.with_overrides(
         dataset_root=Path(dataset_root) if dataset_root is not None else None,
@@ -190,6 +207,23 @@ def validate_config(config: ExperimentConfig) -> None:
         raise ValueError("vllm.gpu_memory_utilization must be positive.")
     if config.vllm.max_model_len <= 0:
         raise ValueError("vllm.max_model_len must be positive.")
+    if config.embedding_finetune is not None:
+        ft = config.embedding_finetune
+        if ft.epochs <= 0:
+            raise ValueError("embedding-finetune.epochs must be positive.")
+        if ft.batch_size <= 0:
+            raise ValueError("embedding-finetune.batch_size must be positive.")
+        if ft.learning_rate <= 0:
+            raise ValueError("embedding-finetune.learning_rate must be positive.")
+        if ft.temperature <= 0:
+            raise ValueError("embedding-finetune.temperature must be positive.")
+        if ft.max_length <= 0:
+            raise ValueError("embedding-finetune.max_length must be positive.")
+        if config.doc_type == "image" and ft.transformed_docs_path is None:
+            raise ValueError(
+                "embedding-finetune.transformed_docs_path is required when doc_type='image' "
+                "(image documents have no embeddable raw text)."
+            )
 
 
 def _load_embedding_models(raw: dict[str, Any]) -> list[str]:
@@ -253,6 +287,23 @@ def _load_vllm_config(raw: Any) -> VLLMConfig:
         enforce_eager=bool(_require(raw, "enforce_eager")),
         use_deep_gemm=bool(_require(raw, "use_deep_gemm")),
         enable_v1_multiprocessing=bool(_require(raw, "enable_v1_multiprocessing")),
+    )
+
+
+def _load_embedding_finetune_config(raw: Any) -> EmbeddingFinetuneConfig | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("embedding-finetune must be a mapping.")
+    return EmbeddingFinetuneConfig(
+        epochs=int(_require(raw, "epochs")),
+        batch_size=int(_require(raw, "batch_size")),
+        learning_rate=float(_require(raw, "learning_rate")),
+        temperature=float(_require(raw, "temperature")),
+        max_length=int(_require(raw, "max_length")),
+        warmup_ratio=float(raw.get("warmup_ratio", 0.1)),
+        weight_decay=float(raw.get("weight_decay", 0.01)),
+        transformed_docs_path=_optional_path(raw.get("transformed_docs_path")),
     )
 
 
