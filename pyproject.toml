@@ -40,6 +40,14 @@ dev = [
 [project.scripts]
 doc-opt = "doc_opt.cli:main"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "smoke: integration smoke tests that load real models",
+    "openai: requires OPENAI_API_KEY environment variable",
+    "slow: loads large local HF models; may take minutes on CPU",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/doc_opt"]
 
