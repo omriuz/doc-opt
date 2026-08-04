@@ -23,6 +23,11 @@ class ExtractRewrittenDocumentTest(unittest.TestCase):
     def test_falls_back_to_raw_text_when_answer_tag_is_missing(self) -> None:
         self.assertEqual(extract_rewritten_document("rewritten doc"), "rewritten doc")
 
+    def test_strips_surrounding_whitespace_on_fallback(self) -> None:
+        # Both the text and image deploy paths route raw model output through this
+        # helper, so plain (untagged) captions must be trimmed identically.
+        self.assertEqual(extract_rewritten_document("  a caption \n"), "a caption")
+
 
 if __name__ == "__main__":
     unittest.main()

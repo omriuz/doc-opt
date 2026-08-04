@@ -157,7 +157,11 @@ def doc_tranform_images(
         ]
         outputs = model.generate(inputs, sampling_params, use_tqdm=True)
         for output in outputs:
-            captions.append(output.outputs[0].text.strip())
+            # Mirror the reward path (extract_rewritten_document): the GRPO reward
+            # scores the *extracted* completion, so the deployed index must apply the
+            # same extraction. Otherwise a policy that emits <answer> tags pollutes the
+            # index with literal tags the reward never saw. See doc_tranform_documents.
+            captions.append(extract_rewritten_document(output.outputs[0].text))
     print(f"Finished VLM generation in {time.time() - start_time:.1f}s.", flush=True)
     return captions
 
