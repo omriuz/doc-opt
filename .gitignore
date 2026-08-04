@@ -21,6 +21,7 @@ artifacts/ds10k/*
 !artifacts/ds10k/run_report.json
 !artifacts/ds10k/run_report_plot.svg
 !artifacts/ds10k/run_report_steps_plot.svg
+legacy/
 grpo/
 docs_embs.npy
 queries_embs.npy
