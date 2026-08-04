@@ -39,6 +39,11 @@ def build_parser() -> argparse.ArgumentParser:
     doc_opt_parser.add_argument("--checkpoint-dir", required=True, type=Path)
     doc_opt_parser.add_argument("--grpo-output-dir", required=True, type=Path)
     doc_opt_parser.add_argument("--baseline-embs-path", required=True, type=Path)
+    # --max-steps (shared) is the full training budget and fixes the LR-schedule
+    # horizon; --steps-this-round caps how many steps this invocation runs, and
+    # --resume-from restores optimizer/scheduler/step state from a prior round.
+    doc_opt_parser.add_argument("--steps-this-round", type=int)
+    doc_opt_parser.add_argument("--resume-from", type=Path)
 
     transfer_parser = subparsers.add_parser(
         "transfer",
@@ -104,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
             checkpoint_dir=args.checkpoint_dir,
             grpo_output_dir=args.grpo_output_dir,
             baseline_embs_path=args.baseline_embs_path,
+            steps_this_round=args.steps_this_round,
+            resume_from=args.resume_from,
         )
         return 0
 

@@ -124,22 +124,33 @@ def _run_pipeline_single(config: ExperimentConfig, *, config_path: Path) -> dict
         current_embeddings_path = layout.runtime_dir / "current_doc_embs.npy"
         current_embeddings_path.parent.mkdir(parents=True, exist_ok=True)
         save_embeddings(current_embeddings_path, current_doc_embeddings)
+        # Pass the full budget as --max-steps so the LR schedule spans the whole run
+        # (not just this round), --steps-this-round to cap this invocation, and
+        # --resume-from so optimizer/scheduler/step state carry over between rounds
+        # instead of restarting each round.
+        doc_opt_args = [
+            "--checkpoint-dir",
+            checkpoint_dir.as_posix(),
+            "--grpo-output-dir",
+            round_output_dir.as_posix(),
+            "--baseline-embs-path",
+            current_embeddings_path.as_posix(),
+            "--model-source",
+            model_source,
+            "--max-steps",
+            str(config.doc_opt.max_steps),
+            "--steps-this-round",
+            str(steps_this_round),
+        ]
+        if refresh_round > 1:
+            # model_source is the previous round's checkpoint, which now carries
+            # saved optimizer/scheduler/RNG/trainer state to resume from.
+            doc_opt_args += ["--resume-from", model_source]
         _run_cli_subprocess(
             "doc-opt",
             config_path=config_path,
             config=config,
-            extra_args=[
-                "--checkpoint-dir",
-                checkpoint_dir.as_posix(),
-                "--grpo-output-dir",
-                round_output_dir.as_posix(),
-                "--baseline-embs-path",
-                current_embeddings_path.as_posix(),
-                "--model-source",
-                model_source,
-                "--max-steps",
-                str(steps_this_round),
-            ],
+            extra_args=doc_opt_args,
         )
         completed_steps += steps_this_round
         latest_checkpoint_dir = checkpoint_dir

@@ -30,23 +30,19 @@ def run_doc_opt(
     checkpoint_dir: Path,
     grpo_output_dir: Path,
     baseline_embs_path: Path,
+    steps_this_round: int | None = None,
+    resume_from: Path | None = None,
 ) -> None:
-    if config.doc_type == "image":
-        _run_doc_opt_image(
-            config,
-            model_source=model_source,
-            checkpoint_dir=checkpoint_dir,
-            grpo_output_dir=grpo_output_dir,
-            baseline_embs_path=baseline_embs_path,
-        )
-    else:
-        _run_doc_opt_text(
-            config,
-            model_source=model_source,
-            checkpoint_dir=checkpoint_dir,
-            grpo_output_dir=grpo_output_dir,
-            baseline_embs_path=baseline_embs_path,
-        )
+    runner = _run_doc_opt_image if config.doc_type == "image" else _run_doc_opt_text
+    runner(
+        config,
+        model_source=model_source,
+        checkpoint_dir=checkpoint_dir,
+        grpo_output_dir=grpo_output_dir,
+        baseline_embs_path=baseline_embs_path,
+        steps_this_round=steps_this_round,
+        resume_from=resume_from,
+    )
 
 
 def _resolve_policy_source(raw_source: str) -> tuple[str, bool]:
@@ -60,6 +56,8 @@ def _grpo_config(config: ExperimentConfig, grpo_output_dir: Path) -> "GRPOConfig
 
     return GRPOConfig(
         output_dir=grpo_output_dir.as_posix(),
+        # Full training budget: fixes the LR-schedule horizon so it decays across the
+        # whole run. Each refresh round advances a slice of it via StepBudgetCallback.
         max_steps=config.doc_opt.max_steps,
         per_device_train_batch_size=config.doc_opt.per_device_train_batch_size,
         num_generations=config.doc_opt.num_generations,
@@ -73,20 +71,60 @@ def _grpo_config(config: ExperimentConfig, grpo_output_dir: Path) -> "GRPOConfig
         save_strategy="no",
         eval_strategy="no",
         report_to="none",
+        # Docs are re-transformed every round, so resuming exact batch order is
+        # pointless; skip the (slow) dataloader fast-forward on resume.
+        ignore_data_skip=True,
         max_completion_length=config.doc_opt.max_completion_length,
     )
 
 
+def make_step_budget_callback(max_new_steps: int):
+    """Build a callback that stops training after ``max_new_steps`` optimizer steps
+    in the current process.
+
+    The GRPO config keeps ``max_steps`` at the full budget so the optimizer and LR
+    schedule stay continuous across refresh rounds (via resume_from_checkpoint). This
+    callback caps how far a single round advances that shared schedule. It counts from
+    the resumed ``global_step``, so it works whether or not the round resumed.
+    """
+    from transformers import TrainerCallback
+
+    class StepBudgetCallback(TrainerCallback):
+        def __init__(self, limit: int) -> None:
+            self.limit = limit
+            self._start_step = 0
+
+        def on_train_begin(self, args, state, control, **kwargs):
+            self._start_step = state.global_step
+            return control
+
+        def on_step_end(self, args, state, control, **kwargs):
+            if state.global_step - self._start_step >= self.limit:
+                control.should_training_stop = True
+            return control
+
+    return StepBudgetCallback(max_new_steps)
+
+
 def _save_checkpoint(trainer, *, checkpoint_dir: Path, processing_class) -> None:
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    # Persist optimizer/scheduler/rng state alongside the final weights so a run can be resumed.
+    # Persist trainer state (global_step) plus optimizer/scheduler/RNG so the next
+    # refresh round can resume from here — continuing the LR schedule and Adam
+    # moments instead of restarting them. save_state() only writes trainer_state.json,
+    # so the optimizer/scheduler/RNG must be saved explicitly.
     original_output_dir = trainer.args.output_dir
     trainer.args.output_dir = checkpoint_dir.as_posix()
     trainer.save_state()
     trainer.args.output_dir = original_output_dir
+    trainer._save_optimizer_and_scheduler(checkpoint_dir.as_posix())
+    trainer._save_rng_state(checkpoint_dir.as_posix())
     trained_model = _unwrap_model_for_saving(trainer.model)
     trained_model.save_pretrained(checkpoint_dir, safe_serialization=True)
     processing_class.save_pretrained(checkpoint_dir)
+
+
+def _round_callbacks(steps_this_round: int | None) -> list | None:
+    return [make_step_budget_callback(steps_this_round)] if steps_this_round else None
 
 
 def _run_doc_opt_text(
@@ -96,6 +134,8 @@ def _run_doc_opt_text(
     checkpoint_dir: Path,
     grpo_output_dir: Path,
     baseline_embs_path: Path,
+    steps_this_round: int | None = None,
+    resume_from: Path | None = None,
 ) -> None:
     import torch
     from datasets import Dataset
@@ -126,6 +166,7 @@ def _run_doc_opt_text(
         model=model,
         reward_funcs=reward,
         args=_grpo_config(config, grpo_output_dir),
+        callbacks=_round_callbacks(steps_this_round),
         train_dataset=Dataset.from_list(
             build_doc_opt_rows(
                 docs=bundle.docs,
@@ -135,7 +176,7 @@ def _run_doc_opt_text(
             )
         ),
     )
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_from.as_posix() if resume_from else None)
     _save_checkpoint(trainer, checkpoint_dir=checkpoint_dir, processing_class=tokenizer)
 
 
@@ -146,6 +187,8 @@ def _run_doc_opt_image(
     checkpoint_dir: Path,
     grpo_output_dir: Path,
     baseline_embs_path: Path,
+    steps_this_round: int | None = None,
+    resume_from: Path | None = None,
 ) -> None:
     import torch
     from datasets import Dataset, Image as HFImage
@@ -185,10 +228,11 @@ def _run_doc_opt_image(
         model=model,
         reward_funcs=reward,
         args=_grpo_config(config, grpo_output_dir),
+        callbacks=_round_callbacks(steps_this_round),
         processing_class=processor,
         train_dataset=dataset,
     )
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_from.as_posix() if resume_from else None)
     _save_checkpoint(trainer, checkpoint_dir=checkpoint_dir, processing_class=processor)
 
 
